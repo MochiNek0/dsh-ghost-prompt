@@ -18,7 +18,7 @@
 ```bash
 dsh plugin --profile web add dsh-ghost-prompt
 # 本地开发版：
-dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-next-prompt
+dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-ghost-prompt
 ```
 
 然后把 `dsh-ghost-prompt` 加到 profile `package.json` 的 `dsh.profile.bundles`（`dsh plugin add` 通常会自动处理）。

@@ -18,7 +18,7 @@ Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn
 ```bash
 dsh plugin --profile web add dsh-ghost-prompt
 # Local development build:
-dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-next-prompt
+dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-ghost-prompt
 ```
 
 Then add `dsh-ghost-prompt` to `dsh.profile.bundles` in the profile's `package.json` (`dsh plugin add` normally handles this for you).
