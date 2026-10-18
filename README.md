@@ -17,8 +17,8 @@
 
 ```bash
 dsh plugin --profile web add dsh-ghost-prompt
-# 本地开发版：
-dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-ghost-prompt
+# 本地开发版：clone 仓库后，在仓库根目录执行
+dsh plugin --profile web add link:.
 ```
 
 然后把 `dsh-ghost-prompt` 加到 profile `package.json` 的 `dsh.profile.bundles`（`dsh plugin add` 通常会自动处理）。
@@ -31,8 +31,8 @@ dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-ghost-prompt
 - id: next-prompt
   config:
     enabled: true          # 总开关
-    provider: amd          # 留空 = 跟随会话模型（provider 和 model 需同时设置）
-    model: DeepSeek-V4-Flash
+    provider: ''           # 留空 = 跟随会话模型；填你在 dsh 里配好的 provider id（provider 和 model 需同时设置）
+    model: ''              # 预测用的模型 id，同样留空则跟随会话
     maxContextChars: 8000  # 送给预测模型的最近对话上限，越小越快
     maxOutputTokens: 512
     timeoutMs: 30000

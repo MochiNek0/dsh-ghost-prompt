@@ -17,8 +17,8 @@ Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn
 
 ```bash
 dsh plugin --profile web add dsh-ghost-prompt
-# Local development build:
-dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-ghost-prompt
+# Local development build: clone the repo, then from its root run
+dsh plugin --profile web add link:.
 ```
 
 Then add `dsh-ghost-prompt` to `dsh.profile.bundles` in the profile's `package.json` (`dsh plugin add` normally handles this for you).
@@ -31,8 +31,8 @@ Change it in the UI, or put it in the profile's `cordis.patch.yml`:
 - id: next-prompt
   config:
     enabled: true          # master switch
-    provider: amd          # empty = follow the session model (provider and model must be set together)
-    model: DeepSeek-V4-Flash
+    provider: ''           # empty = follow the session model; set it to a provider id you configured in dsh (provider and model must be set together)
+    model: ''              # model id for predictions; leave empty to follow the session too
     maxContextChars: 8000  # cap on the most recent conversation sent for prediction; lower is faster
     maxOutputTokens: 512
     timeoutMs: 30000
