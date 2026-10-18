@@ -14,11 +14,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MochiNek0/dsh-next-prompt.git"
+    "url": "git+https://github.com/MochiNek0/dsh-ghost-prompt.git"
   },
-  "homepage": "https://github.com/MochiNek0/dsh-next-prompt#readme",
+  "homepage": "https://github.com/MochiNek0/dsh-ghost-prompt#readme",
   "bugs": {
-    "url": "https://github.com/MochiNek0/dsh-next-prompt/issues"
+    "url": "https://github.com/MochiNek0/dsh-ghost-prompt/issues"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
