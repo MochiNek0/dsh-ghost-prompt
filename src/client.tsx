@@ -5,13 +5,13 @@ import { createPortal } from "react-dom";
 const NAMESPACE = "next-prompt";
 
 /** This package's npm name; the Plugins page keys `plugins.bundle.config` on it. */
-const PACKAGE_NAME = "dsh-next-prompt";
+const PACKAGE_NAME = "dsh-ghost-prompt";
 
 /** Host routes, relative so they resolve under dsh's `<base href="./">`. */
 const SUGGEST_PATH = "api/next-prompt/suggest";
 const MODELS_PATH = "api/next-prompt/models";
 const BENCH_PATH = "api/next-prompt/bench";
-const BENCH_STORAGE = "dsh-next-prompt:bench";
+const BENCH_STORAGE = "dsh-ghost-prompt:bench";
 
 /**
  * dsh's shared UI kit (Switch, icons), answered by the page's module loader.
@@ -178,7 +178,7 @@ async function streamSuggestion(
 }
 
 /** One page-wide stylesheet for the ghost and the settings card. */
-const STYLE_ID = "dsh-next-prompt-style";
+const STYLE_ID = "dsh-ghost-prompt-style";
 const CSS = `
 [data-composer-card][data-next-prompt-active] [data-composer-placeholder]{opacity:0!important}
 [data-next-prompt-ghost]{visibility:visible!important;white-space:normal!important;display:block!important;-webkit-line-clamp:unset!important}

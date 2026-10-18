@@ -1,6 +1,6 @@
 [中文](./README.md) | **English**
 
-# dsh-next-prompt
+# dsh-ghost-prompt
 
 Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn the model guesses your next message and shows it as grey ghost text in the composer — press **→** to accept it into the input, or just start typing to ignore it. Similar to the prompt suggestion in Claude Code / Codex.
 
@@ -16,12 +16,12 @@ Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn
 ## Installation
 
 ```bash
-dsh plugin --profile web add dsh-next-prompt
+dsh plugin --profile web add dsh-ghost-prompt
 # Local development build:
 dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-next-prompt
 ```
 
-Then add `dsh-next-prompt` to `dsh.profile.bundles` in the profile's `package.json` (`dsh plugin add` normally handles this for you).
+Then add `dsh-ghost-prompt` to `dsh.profile.bundles` in the profile's `package.json` (`dsh plugin add` normally handles this for you).
 
 ## Configuration
 

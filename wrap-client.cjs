@@ -11,7 +11,7 @@ if (code.includes('window.__ModuleLoader__.load')) {
 }
 
 fs.writeFileSync(clientJsPath, `window.__ModuleLoader__.load({
-  id: "dsh-next-prompt",
+  id: "dsh-ghost-prompt",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;

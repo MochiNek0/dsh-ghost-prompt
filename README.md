@@ -1,6 +1,6 @@
 **中文** | [English](./README.en.md)
 
-# dsh-next-prompt
+# dsh-ghost-prompt
 
 给 DeepSeek Harness (dsh) 加上「预测下一句」：每轮对话结束后，模型猜你接下来想说什么，以灰色幽灵文字显示在输入框里——按 **→** 接受、变成真正的输入；直接打字则忽略。类似 Claude Code / Codex 的 prompt suggestion。
 
@@ -16,12 +16,12 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add dsh-next-prompt
+dsh plugin --profile web add dsh-ghost-prompt
 # 本地开发版：
 dsh plugin --profile web add link:D:/12824/Desktop/dsh-plugins/dsh-next-prompt
 ```
 
-然后把 `dsh-next-prompt` 加到 profile `package.json` 的 `dsh.profile.bundles`（`dsh plugin add` 通常会自动处理）。
+然后把 `dsh-ghost-prompt` 加到 profile `package.json` 的 `dsh.profile.bundles`（`dsh plugin add` 通常会自动处理）。
 
 ## 配置
 

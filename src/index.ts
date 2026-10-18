@@ -2,7 +2,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { createRequire } from 'node:module'
 
 /**
- * Host half of dsh-next-prompt.
+ * Host half of dsh-ghost-prompt.
  *
  * Latency is the whole game here, so a prediction starts the moment the
  * turn's final assistant message is logged (one with no tool calls) — before

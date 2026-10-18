@@ -1,13 +1,28 @@
 {
-  "name": "dsh-next-prompt",
+  "name": "dsh-ghost-prompt",
   "version": "1.0.0",
   "description": "Prompt suggestions for DeepSeek Harness (dsh): after each turn the model predicts your next message and shows it as ghost text in the composer; press → to accept",
+  "author": "MochiNek0",
   "keywords": [
+    "dsh",
     "dsh-plugin",
+    "deepseek-harness",
     "prompt-suggestion",
+    "ghost-text",
     "autocomplete"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MochiNek0/dsh-next-prompt.git"
+  },
+  "homepage": "https://github.com/MochiNek0/dsh-next-prompt#readme",
+  "bugs": {
+    "url": "https://github.com/MochiNek0/dsh-next-prompt/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "icon": "./icon.svg",
   "engines": {

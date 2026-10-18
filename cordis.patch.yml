@@ -1,4 +1,4 @@
-# dsh bundle patch for dsh-next-prompt.
+# dsh bundle patch for dsh-ghost-prompt.
 #
 # Installing this plugin into a profile's bundles mounts its Host half under
 # the entry id `next-prompt` (the id the settings card's `configForms.get`
@@ -12,4 +12,4 @@
 #       model: deepseek-chat
 - insert:
     - id: next-prompt
-      name: 'dsh-next-prompt'
+      name: 'dsh-ghost-prompt'
