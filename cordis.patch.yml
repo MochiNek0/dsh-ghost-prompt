@@ -1,0 +1,15 @@
+# dsh bundle patch for dsh-next-prompt.
+#
+# Installing this plugin into a profile's bundles mounts its Host half under
+# the entry id `next-prompt` (the id the settings card's `configForms.get`
+# reads). Removing the plugin drops this layer again. Defaults live in the
+# plugin's Config schema; override them in the profile's own cordis.patch.yml:
+#
+#   - id: next-prompt
+#     config:
+#       enabled: true
+#       provider: deepseek     # empty = follow the session's model
+#       model: deepseek-chat
+- insert:
+    - id: next-prompt
+      name: 'dsh-next-prompt'

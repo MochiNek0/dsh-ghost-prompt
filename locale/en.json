@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Prompt Suggestions",
+    "description": "After each turn, the model predicts your next message and shows it as ghost text in the composer; press → to accept."
+  }
+}
