@@ -362,14 +362,12 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     className: string;
   } | null>(null);
 
-  // The user left the suggestion's path (or pressed Esc): no suggestion for this turn.
+  // The user pressed Esc or accepted it all: no suggestion for this turn.
   const retiredRef = React.useRef(false);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
   const suggestionRef = React.useRef(suggestion);
   suggestionRef.current = suggestion;
-  const completeRef = React.useRef(complete);
-  completeRef.current = complete;
   /** The stream currently feeding the ghost, if any. */
   const streamRef = React.useRef<object | null>(null);
 
@@ -396,7 +394,6 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
       setComplete(false);
       const show = (text: string | null, done: boolean) => {
         if (signal.aborted || retiredRef.current) return;
-        if (text !== null && !onPath(normalizeDraft(draftRef.current), text, done)) return retire();
         setSuggestion(text);
         setComplete(done);
       };
@@ -441,13 +438,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, fetchFor]);
 
-  // Typing off the suggestion's path retires it for the rest of this turn.
-  React.useEffect(() => {
-    if (draft === "") return;
-    const current = suggestionRef.current;
-    if (current === null || !onPath(normalizeDraft(draft), current, completeRef.current)) retire();
-  }, [draft, retire]);
-
+  // Off the suggestion's path it just hides; deleting back onto the path shows it again.
   const typed = normalizeDraft(draft);
   const rest = suggestion && onPath(typed, suggestion, complete) ? suggestion.slice(typed.length) : "";
   const visible = rest !== "" && phase === "plain" && !running;
