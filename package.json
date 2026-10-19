@@ -1,6 +1,6 @@
 {
   "name": "dsh-ghost-prompt",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Prompt suggestions for DeepSeek Harness (dsh): after each turn the model predicts your next message and shows it as ghost text in the composer; press → to accept",
   "author": "MochiNek0",
   "keywords": [
