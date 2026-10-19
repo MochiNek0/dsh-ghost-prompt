@@ -11,7 +11,18 @@ const PACKAGE_NAME = "dsh-ghost-prompt";
 const SUGGEST_PATH = "api/next-prompt/suggest";
 const MODELS_PATH = "api/next-prompt/models";
 const BENCH_PATH = "api/next-prompt/bench";
+const DISMISS_PATH = "api/next-prompt/dismiss";
 const BENCH_STORAGE = "dsh-ghost-prompt:bench";
+
+/** Which key accepts the whole suggestion; mirrors the Host's `acceptKey`. */
+type AcceptKey = "arrow" | "tab";
+const KEY_LABEL: Record<AcceptKey, string> = { arrow: "→", tab: "Tab" };
+const isMac = typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || "");
+/** Word-wise accept: Option+→ on macOS, Ctrl+→ elsewhere (Alt+→ works too). */
+const WORD_KEY_LABEL = isMac ? "⌥→" : "Ctrl+→";
+
+/** Set once `configForms` is there, so the ghost can read `acceptKey`. */
+let configForm: any;
 
 /**
  * dsh's shared UI kit (Switch, icons), answered by the page's module loader.
@@ -28,11 +39,13 @@ const ui: any = (() => {
 type Lang = "zh" | "en";
 
 const zh = {
-  "ghost.accept": "→ 接受",
+  "ghost.accept": "{key} 接受",
   "card.enabled": "输入预测",
   "card.enabled.hint": "每轮对话结束后，猜你接下来想说什么，以灰色文字显示在输入框里。",
   "card.preview.suggestion": "好的，再加上单元测试",
-  "card.preview.caption": "按 → 接受预测；直接打字则忽略",
+  "card.preview.caption": "按 {key} 接受，{word} 逐词接受，Esc 关闭；打的字和预测开头一致时会继续提示",
+  "card.acceptKey": "接受键",
+  "card.acceptKey.hint": "按哪个键接受整条预测。也可以直接点击输入框里的提示标签。",
   "card.model": "预测模型",
   "card.model.hint": "每次预测会额外调用一次模型。不带推理的 Flash 类小模型响应最快、也最省钱。",
   "card.model.follow": "跟随当前会话",
@@ -62,11 +75,13 @@ const zh = {
 };
 type TKey = keyof typeof zh;
 const en: Record<TKey, string> = {
-  "ghost.accept": "→ accept",
+  "ghost.accept": "{key} accept",
   "card.enabled": "Prompt suggestions",
   "card.enabled.hint": "After each turn, guess what you will type next and show it as grey text in the composer.",
   "card.preview.suggestion": "Sounds good, add unit tests too",
-  "card.preview.caption": "Press → to accept; just type to ignore",
+  "card.preview.caption": "{key} accepts, {word} accepts a word, Esc dismisses; typing the suggestion's start keeps it showing",
+  "card.acceptKey": "Accept key",
+  "card.acceptKey.hint": "Which key accepts the whole suggestion. You can also click the hint chip in the composer.",
   "card.model": "Suggestion model",
   "card.model.hint": "Each suggestion is one extra model call. A small non-reasoning Flash model is fastest and cheapest.",
   "card.model.follow": "Follow the current session",
@@ -177,12 +192,61 @@ async function streamSuggestion(
   }
 }
 
+/** Tell the Host the user moved on, so it stops (or forgets) this turn's prediction. */
+function dismissSuggestion(sessionId: string) {
+  fetch(DISMISS_PATH, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/** The editor may hold non-breaking spaces where the suggestion has plain ones. */
+const normalizeDraft = (draft: string) => draft.replace(/ /g, " ");
+
+/**
+ * Whether the draft is still on the suggestion's path: a prefix of it, or —
+ * while it is still streaming — typed ahead of what has arrived so far.
+ */
+const onPath = (draft: string, suggestion: string, complete: boolean) =>
+  suggestion.startsWith(draft) || (!complete && draft.startsWith(suggestion));
+
+/** The next word of `rest` plus the spaces / punctuation after it. */
+function nextWord(rest: string): string {
+  const Segmenter = (Intl as any).Segmenter;
+  if (!Segmenter) return /^\s*\S+\s*/.exec(rest)?.[0] ?? rest;
+  let end = 0;
+  let sawWord = false;
+  for (const { segment, isWordLike } of new Segmenter(undefined, { granularity: "word" }).segment(rest)) {
+    if (isWordLike && sawWord) break;
+    sawWord ||= isWordLike;
+    end += segment.length;
+  }
+  return rest.slice(0, end);
+}
+
+/** Whether the caret sits collapsed at the very end of `editable`. */
+function caretAtEnd(editable: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0);
+  if (!editable.contains(range.endContainer)) return false;
+  const after = document.createRange();
+  after.selectNodeContents(editable);
+  after.setStart(range.endContainer, range.endOffset);
+  return after.toString() === "";
+}
+
 /** One page-wide stylesheet for the ghost and the settings card. */
 const STYLE_ID = "dsh-ghost-prompt-style";
 const CSS = `
 [data-composer-card][data-next-prompt-active] [data-composer-placeholder]{opacity:0!important}
 [data-next-prompt-ghost]{visibility:visible!important;white-space:normal!important;display:block!important;-webkit-line-clamp:unset!important}
-[data-next-prompt-ghost] kbd{font:inherit;font-size:11px;line-height:16px;margin-left:8px;padding:0 5px;border-radius:4px;border:.5px solid var(--dsw-alias-border-l4,currentColor);opacity:.75;white-space:nowrap;display:inline-block;animation:np-fade .2s ease-out}
+[data-next-prompt-ghost] kbd{font:inherit;font-size:11px;line-height:16px;margin-left:8px;padding:0 5px;border-radius:4px;border:.5px solid var(--dsw-alias-border-l4,currentColor);opacity:.75;white-space:nowrap;display:inline-block;animation:np-fade .2s ease-out;pointer-events:auto;cursor:pointer}
+[data-next-prompt-ghost] kbd:hover{opacity:1}
 @keyframes np-fade{from{opacity:0}to{opacity:.75}}
 
 .np-card{display:flex;flex-direction:column;color:var(--dsw-alias-label-primary)}
@@ -230,6 +294,9 @@ const CSS = `
 .np-btn{flex:none;height:28px;padding:0 12px;font:inherit;font-size:12px;color:var(--dsw-alias-label-primary);background:transparent;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm,8px);cursor:pointer;white-space:nowrap}
 .np-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .np-btn:disabled{opacity:.5;cursor:default}
+.np-segment{flex:none;display:flex;gap:6px}
+.np-segment .np-btn{min-width:48px}
+.np-segment .np-btn[aria-checked=true]{border-color:var(--dsw-alias-state-business-primary,#3e58d6);color:var(--dsw-alias-label-primary-bluish,var(--dsw-alias-state-business-primary,#3e58d6))}
 .np-fast{color:var(--dsw-alias-state-success-primary,#1a9e5a)}.np-mid{color:var(--dsw-alias-state-warning-primary,#c98a00)}.np-slow{color:var(--dsw-alias-state-error-primary,#d33)}
 .np-recent{margin-top:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
 .np-empty{padding:16px 8px;text-align:center;font-size:12px;color:var(--dsw-alias-label-caption)}
@@ -270,12 +337,20 @@ type GhostProps = {
  * Lives in `conversation.input.overlay` (inside the composer card) and draws
  * the suggestion as a portal into the editor's own positioning box, styled
  * with the placeholder's class so it sits exactly where the placeholder does.
+ * Once the user has typed the suggestion's start, that part is drawn hidden
+ * so the rest lines up right after the typed text.
  */
 function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale }: GhostProps) {
   const { t } = useLocale(locale);
   const running: boolean = useSession((s: any) => s?.running === true);
   const draft: string = useInput((s: any) => s?.draft ?? "");
   const phase: string = useInput((s: any) => s?.phase ?? "plain");
+  const form = configForm;
+  const formValue = React.useSyncExternalStore(
+    React.useCallback((listener: () => void) => (form ? form.subscribe(listener) : () => {}), [form]),
+    () => form?.getSnapshot()?.value,
+  );
+  const acceptKey: AcceptKey = formValue?.acceptKey === "tab" ? "tab" : "arrow";
 
   const [suggestion, setSuggestion] = React.useState<string | null>(null);
   const [complete, setComplete] = React.useState(false);
@@ -287,33 +362,60 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     className: string;
   } | null>(null);
 
-  // The user has typed since this turn ended: no suggestion for this turn.
-  const typedRef = React.useRef(false);
+  // The user left the suggestion's path (or pressed Esc): no suggestion for this turn.
+  const retiredRef = React.useRef(false);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
+  const suggestionRef = React.useRef(suggestion);
+  suggestionRef.current = suggestion;
+  const completeRef = React.useRef(complete);
+  completeRef.current = complete;
+  /** The stream currently feeding the ghost, if any. */
+  const streamRef = React.useRef<object | null>(null);
+
+  /** Start a fresh turn: forget the old suggestion and its stream. */
+  const reset = () => {
+    retiredRef.current = false;
+    suggestionRef.current = null;
+    streamRef.current = null;
+    setSuggestion(null);
+  };
+
+  /** Drop the suggestion for the rest of this turn, and stop the Host paying for it. */
+  const retire = React.useCallback(() => {
+    if (retiredRef.current) return;
+    retiredRef.current = true;
+    if (streamRef.current || suggestionRef.current) dismissSuggestion(sessionId);
+    setSuggestion(null);
+  }, [sessionId]);
 
   const fetchFor = React.useCallback(
     (generate: boolean, signal: AbortSignal) => {
-      const stale = () => signal.aborted || typedRef.current || draftRef.current !== "";
+      const token = {};
+      streamRef.current = token;
       setComplete(false);
-      streamSuggestion(sessionId, generate, signal, (partial) => {
-        if (!stale()) setSuggestion(partial);
-      })
+      const show = (text: string | null, done: boolean) => {
+        if (signal.aborted || retiredRef.current) return;
+        if (text !== null && !onPath(normalizeDraft(draftRef.current), text, done)) return retire();
+        setSuggestion(text);
+        setComplete(done);
+      };
+      streamSuggestion(sessionId, generate, signal, (partial) => show(partial, false))
         .then((final) => {
-          if (stale()) return;
-          setSuggestion(final);
-          setComplete(true);
+          if (streamRef.current === token) streamRef.current = null;
+          show(final, true);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (streamRef.current === token) streamRef.current = null;
+        });
     },
-    [sessionId],
+    [sessionId, retire],
   );
 
   // A session opened idle may already have an answer (or one in flight) on
   // the Host; read it without starting a new model call.
   React.useEffect(() => {
-    setSuggestion(null);
-    typedRef.current = draftRef.current !== "";
+    reset();
     if (running) return;
     const controller = new AbortController();
     fetchFor(false, controller.signal);
@@ -332,20 +434,23 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
       return;
     }
     if (!prev) return;
-    typedRef.current = draftRef.current !== "";
+    reset();
     const controller = new AbortController();
     fetchFor(true, controller.signal);
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, fetchFor]);
 
-  // Typing anything retires the suggestion for the rest of this turn.
+  // Typing off the suggestion's path retires it for the rest of this turn.
   React.useEffect(() => {
     if (draft === "") return;
-    typedRef.current = true;
-    setSuggestion(null);
-  }, [draft]);
+    const current = suggestionRef.current;
+    if (current === null || !onPath(normalizeDraft(draft), current, completeRef.current)) retire();
+  }, [draft, retire]);
 
-  const visible = !!suggestion && draft === "" && phase === "plain" && !running;
+  const typed = normalizeDraft(draft);
+  const rest = suggestion && onPath(typed, suggestion, complete) ? suggestion.slice(typed.length) : "";
+  const visible = rest !== "" && phase === "plain" && !running;
 
   // Locate the editor box each time a suggestion is about to show; the
   // composer may have re-mounted since the last one.
@@ -369,14 +474,13 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     return () => target.card.removeAttribute("data-next-prompt-active");
   }, [target]);
 
-  // → accepts. Captured on the card so it runs before the editor's keymap.
-  const acceptRef = React.useRef<() => boolean>(() => false);
-  acceptRef.current = () => {
+  // Accept the whole suggestion, or just its next word.
+  const acceptRef = React.useRef<(word: boolean) => boolean>(() => false);
+  acceptRef.current = (word) => {
     if (!visible || !target || !suggestion) return false;
-    const text = suggestion;
+    const text = word ? suggestion.slice(0, typed.length + nextWord(rest).length) : suggestion;
     const { editable } = target;
-    typedRef.current = true;
-    setSuggestion(null);
+    if (text === suggestion) retire();
     inputActions.setDraft(text);
     requestAnimationFrame(() => {
       editable.focus();
@@ -387,25 +491,40 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     });
     return true;
   };
+  const acceptKeyRef = React.useRef(acceptKey);
+  acceptKeyRef.current = acceptKey;
+  // Keys are captured on the card so they run before the editor's keymap.
   React.useEffect(() => {
     if (!target) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "ArrowRight") return;
-      if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.isComposing || event.keyCode === 229) return;
       if (!(event.target instanceof Node) || !target.editable.contains(event.target)) return;
-      if (!acceptRef.current()) return;
+      if (event.shiftKey || event.metaKey) return;
+      const modified = event.ctrlKey || event.altKey;
+      let handled = false;
+      if (event.key === "Escape" && !modified) {
+        retire();
+        handled = true;
+      } else {
+        const whole = !modified && event.key === (acceptKeyRef.current === "tab" ? "Tab" : "ArrowRight");
+        const word = modified && event.key === "ArrowRight";
+        // Mid-draft, the keys keep their usual meaning unless the caret is at the end.
+        if ((whole || word) && (draftRef.current === "" || caretAtEnd(target.editable))) {
+          handled = acceptRef.current(word);
+        }
+      }
+      if (!handled) return;
       event.preventDefault();
       event.stopPropagation();
     };
     target.card.addEventListener("keydown", onKeyDown, true);
     return () => target.card.removeEventListener("keydown", onKeyDown, true);
-  }, [target]);
+  }, [target, retire]);
 
   return (
     <>
       <span ref={anchorRef} hidden />
-      {visible && target
+      {visible && target && suggestion
         ? createPortal(
             <div
               aria-hidden
@@ -413,8 +532,17 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
               className={target.className || undefined}
               style={target.className ? undefined : GHOST_FALLBACK_STYLE}
             >
-              {suggestion}
-              {complete ? <kbd>{t("ghost.accept")}</kbd> : null}
+              {typed ? <span style={{ visibility: "hidden" }}>{suggestion.slice(0, typed.length)}</span> : null}
+              {rest}
+              {complete ? (
+                <kbd
+                  // Keep focus in the editor; a click or tap accepts (touch screens have no → key).
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => acceptRef.current(false)}
+                >
+                  {t("ghost.accept", { key: KEY_LABEL[acceptKey] })}
+                </kbd>
+              ) : null}
             </div>,
             target.box,
           )
@@ -427,7 +555,7 @@ type ModelRow = { provider: string; providerName: string; model: string; name: s
 
 type FormSnapshot = {
   status: "loading" | "ready" | "unavailable";
-  value?: { enabled?: boolean; provider?: string; model?: string };
+  value?: { enabled?: boolean; provider?: string; model?: string; acceptKey?: AcceptKey };
   writable?: boolean;
 };
 
@@ -464,15 +592,17 @@ const Icon = ({ name, fallback }: { name: string; fallback: string }) => {
 };
 
 /** The ghost as it will look in the composer, so the setting explains itself. */
-function Preview({ t, dim }: { t: Translate; dim: boolean }) {
+function Preview({ t, dim, acceptKey }: { t: Translate; dim: boolean; acceptKey: AcceptKey }) {
   return (
     <div className="np-preview" style={dim ? { opacity: 0.45 } : undefined} aria-hidden>
       <div className="np-preview-line">
         <span className="np-caret" />
         <span className="np-ghost">{t("card.preview.suggestion")}</span>
-        <span className="np-key">→</span>
+        <span className="np-key">{KEY_LABEL[acceptKey]}</span>
       </div>
-      <div className="np-preview-caption">{t("card.preview.caption")}</div>
+      <div className="np-preview-caption">
+        {t("card.preview.caption", { key: KEY_LABEL[acceptKey], word: WORD_KEY_LABEL })}
+      </div>
     </div>
   );
 }
@@ -700,6 +830,7 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
   const provider = value.provider ?? "";
   const model = value.model ?? "";
   const selected = routeKey(provider, model);
+  const acceptKey: AcceptKey = value.acceptKey === "tab" ? "tab" : "arrow";
   const disabled = snapshot.status !== "ready" || snapshot.writable === false || saving;
 
   const write = async (ops: Array<[string, unknown]>) => {
@@ -772,7 +903,7 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
 
   return (
     <div className="np-card">
-      <Preview t={t} dim={!enabled} />
+      <Preview t={t} dim={!enabled} acceptKey={acceptKey} />
 
       <div className="np-row">
         <div className="np-text">
@@ -814,6 +945,29 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
           onSelect={onModel}
           bench={bench}
         />
+      </div>
+
+      <div className={`np-row${enabled ? "" : " np-dim"}`}>
+        <div className="np-text">
+          <div className="np-title">{t("card.acceptKey")}</div>
+          <div className="np-desc">{t("card.acceptKey.hint")}</div>
+        </div>
+        <div className="np-segment" role="radiogroup" aria-label={t("card.acceptKey")}>
+          {(["arrow", "tab"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              className="np-btn"
+              aria-checked={acceptKey === key}
+              disabled={disabled || !enabled}
+              // The default is →, so choosing it again clears the override.
+              onClick={() => void write([["acceptKey", key === "arrow" ? undefined : key]])}
+            >
+              {KEY_LABEL[key]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className={enabled ? undefined : "np-dim"}>
@@ -904,6 +1058,12 @@ export function apply(ctx: any) {
   // web boot treats a pending entry as fatal.
   ctx.inject(["configForms"], (fctx: any) => {
     const form = fctx.configForms.get(NAMESPACE);
+    fctx.effect(() => {
+      configForm = form;
+      return () => {
+        configForm = undefined;
+      };
+    });
     fctx.slots.inject("plugins.bundle.config", () =>
       fctx.slots.register(
         {

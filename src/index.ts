@@ -29,6 +29,7 @@ const PLUGIN_VERSION: string = (() => {
 export const SUGGEST_ROUTE = '/api/next-prompt/suggest'
 export const MODELS_ROUTE = '/api/next-prompt/models'
 export const BENCH_ROUTE = '/api/next-prompt/bench'
+export const DISMISS_ROUTE = '/api/next-prompt/dismiss'
 
 /**
  * A fixed, typical turn for the speed test: a finished task plus an offer.
@@ -56,6 +57,7 @@ const configFields = () => ({
   maxContextChars: Schema.natural().min(1000).max(100000).default(8000),
   maxOutputTokens: Schema.natural().min(16).max(4096).default(512),
   timeoutMs: Schema.natural().min(1000).max(120000).default(30000),
+  acceptKey: Schema.union([Schema.const('arrow'), Schema.const('tab')]).default('arrow'),
 })
 
 /** Field descriptions keyed by dsh locale id; English is the required fallback. */
@@ -67,6 +69,7 @@ const configDescriptions: Record<'en' | 'zh', Record<keyof ReturnType<typeof con
     maxContextChars: 'Most recent conversation sent to the prediction model, in characters, cut from the newest message back. Smaller is faster.',
     maxOutputTokens: 'Output token limit for a prediction call (a reasoning model\'s thinking counts too).',
     timeoutMs: 'Timeout of one prediction, in milliseconds.',
+    acceptKey: 'Key that accepts the whole suggestion: arrow (→) or tab (Tab).',
   },
   zh: {
     enabled: '每轮对话结束后预测你接下来想输入的内容，显示为输入框里的灰色提示，按 → 接受。',
@@ -75,6 +78,7 @@ const configDescriptions: Record<'en' | 'zh', Record<keyof ReturnType<typeof con
     maxContextChars: '送给预测模型的最近对话上限（字符数），从最新消息往前截取。越小越快。',
     maxOutputTokens: '预测调用的输出 token 上限（推理模型的思考也计入）。',
     timeoutMs: '单次预测的超时（毫秒）。',
+    acceptKey: '接受整条预测的按键：arrow（→）或 tab（Tab）。',
   },
 }
 
@@ -99,6 +103,7 @@ export interface Config {
   maxContextChars: number
   maxOutputTokens: number
   timeoutMs: number
+  acceptKey: 'arrow' | 'tab'
 }
 
 type Live<T> = T | { get(): T }
@@ -294,6 +299,20 @@ export function apply(ctx: any, rawConfig: RawConfig) {
   }
 
   /**
+   * An armed goal with rounds left sends the next message itself, so nobody
+   * would read a prediction. `agents` / `goals` are optional services.
+   */
+  const goalContinues = (sessionId: string): boolean => {
+    try {
+      const agent = ctx.reflect?.get?.('agents')?.get?.(sessionId)
+      const goal = agent && ctx.reflect?.get?.('goals')?.get?.(agent)
+      return goal?.phase === 'active' && goal.activation === 'armed' && goal.roundsStarted < goal.maxGoalRounds
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * The final-reply seq the user would be answering now, or `undefined` when
    * there is none: no turn yet, one still running, or the last one ended in an
    * error / cancel / block (a prediction there would guess at a failure).
@@ -447,16 +466,23 @@ export function apply(ctx: any, rawConfig: RawConfig) {
   ctx.on('session/event', (session: any, event: SessionEvent) => {
     if (!isFinalReply(event)) return
     const seen = watched.get(session.id)
-    if (seen === undefined || Date.now() - seen > WATCH_MS) return
+    if (seen === undefined) return
+    if (Date.now() - seen > WATCH_MS) {
+      watched.delete(session.id)
+      return
+    }
     if (!config().enabled) return
     const events: SessionEvent[] = session.snapshotEvents()
-    if (isSubagent(events)) return
+    if (isSubagent(events) || goalContinues(session.id)) return
     start(session.id, session, events, event.seq)
   })
 
   /** The pending prediction for a session's latest turn, starting it only when `generate` is set. */
   const lookup = (sessionId: string, generate: boolean): Pending | undefined => {
+    // Re-insert so the map stays oldest-first, then drop the overflow.
+    watched.delete(sessionId)
     watched.set(sessionId, Date.now())
+    while (watched.size > CACHE_LIMIT) watched.delete(watched.keys().next().value as string)
     const session = ctx.sessions.get(sessionId)
     if (!session) return undefined
     const events: SessionEvent[] = session.snapshotEvents()
@@ -465,7 +491,21 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     if (key === undefined) return undefined
     const pending = cache.get(sessionId)
     if (pending?.key === key) return pending
-    return generate ? start(sessionId, session, events, key) : undefined
+    return generate && !goalContinues(sessionId) ? start(sessionId, session, events, key) : undefined
+  }
+
+  /**
+   * The user moved on (typed something else, or pressed Esc): stop the call
+   * still running for the current turn, or forget its finished suggestion so
+   * other tabs and a reopened session don't show it either. A newer turn's
+   * prediction is left alone.
+   */
+  const dismiss = (sessionId: string) => {
+    const pending = cache.get(sessionId)
+    const session = ctx.sessions.get(sessionId)
+    if (!pending || !session || answerableKey(session.snapshotEvents()) !== pending.key) return
+    if (pending.done) pending.suggestion = null
+    else pending.controller.abort(new Error('dismissed by the user'))
   }
 
   /** NDJSON: `{"partial":…}` lines as the text grows, then one `{"done":true,"suggestion":…}`. */
@@ -564,6 +604,23 @@ export function apply(ctx: any, rawConfig: RawConfig) {
         }
       },
     }), 'next-prompt: suggest route')
+    cctx.effect(() => cctx.connection.fetch.register({
+      path: DISMISS_ROUTE,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: async (request: Request) => {
+        let body: any
+        try {
+          body = await request.json()
+        } catch {
+          return jsonResponse(400, { error: 'expected a JSON body' })
+        }
+        const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+        if (!sessionId) return jsonResponse(400, { error: 'sessionId is required' })
+        dismiss(sessionId)
+        return jsonResponse(200, { ok: true })
+      },
+    }), 'next-prompt: dismiss route')
     cctx.effect(() => cctx.connection.fetch.register({
       path: MODELS_ROUTE,
       methods: ['GET'],
