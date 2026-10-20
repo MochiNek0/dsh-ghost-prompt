@@ -13,6 +13,7 @@ const MODELS_PATH = "api/next-prompt/models";
 const BENCH_PATH = "api/next-prompt/bench";
 const DISMISS_PATH = "api/next-prompt/dismiss";
 const BENCH_STORAGE = "dsh-ghost-prompt:bench";
+const BENCH_PICK_STORAGE = "dsh-ghost-prompt:bench-pick";
 
 /** Which key accepts the whole suggestion; mirrors the Host's `acceptKey`. */
 type AcceptKey = "arrow" | "tab";
@@ -57,9 +58,10 @@ const zh = {
   "card.model.missing": "已配置，但当前不可用",
   "card.saveFailed": "保存失败，已恢复为服务器上的值",
   "card.bench": "模型测速",
-  "card.bench.hint": "用一段固定的对话实际调用每个模型一次，看谁出预测最快、预测得怎么样。会产生少量调用费用。",
-  "card.bench.start": "开始测速",
-  "card.bench.again": "重新测速",
+  "card.bench.hint": "勾选要测的模型，用一段固定的对话各实际调用一次，看谁出预测最快、预测得怎么样。每个模型会产生一次调用费用。",
+  "card.bench.start": "测速所选（{count}）",
+  "card.bench.all": "全选",
+  "card.bench.clear": "清空",
   "card.bench.running": "测速中 {done}/{total}",
   "card.bench.use": "选用",
   "card.bench.inUse": "使用中",
@@ -93,9 +95,10 @@ const en: Record<TKey, string> = {
   "card.model.missing": "Configured, currently unavailable",
   "card.saveFailed": "Save failed; reverted to the stored value",
   "card.bench": "Speed test",
-  "card.bench.hint": "Calls each model once on a fixed conversation to see which predicts fastest, and how well. Costs a few calls.",
-  "card.bench.start": "Run test",
-  "card.bench.again": "Run again",
+  "card.bench.hint": "Tick the models to test; each is called once on a fixed conversation to see which predicts fastest, and how well. Each model costs one call.",
+  "card.bench.start": "Test selected ({count})",
+  "card.bench.all": "All",
+  "card.bench.clear": "Clear",
   "card.bench.running": "Testing {done}/{total}",
   "card.bench.use": "Use",
   "card.bench.inUse": "In use",
@@ -284,6 +287,9 @@ const CSS = `
 .np-option-name{font-size:13px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .np-option-sub{font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .np-check{flex:none;width:14px;display:inline-flex;color:var(--dsw-alias-state-business-primary,#3e58d6)}
+.np-pick{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
+.np-pick .np-btn[aria-pressed=true]{border-color:var(--dsw-alias-state-business-primary,#3e58d6);color:var(--dsw-alias-label-primary-bluish,var(--dsw-alias-state-business-primary,#3e58d6))}
+.np-pick-actions{display:flex;gap:6px;padding:0 0 8px}
 .np-bench{display:flex;flex-direction:column;gap:2px;padding:0 0 16px}
 .np-bench-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--dsw-radius-sm,8px)}
 .np-bench-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -362,7 +368,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     className: string;
   } | null>(null);
 
-  // The user pressed Esc or accepted it all: no suggestion for this turn.
+  // The user pressed Esc: no suggestion for this turn.
   const retiredRef = React.useRef(false);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
@@ -471,7 +477,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     if (!visible || !target || !suggestion) return false;
     const text = word ? suggestion.slice(0, typed.length + nextWord(rest).length) : suggestion;
     const { editable } = target;
-    if (text === suggestion) retire();
+    // Kept even when accepted whole: deleting the text back brings the ghost back.
     inputActions.setDraft(text);
     requestAnimationFrame(() => {
       editable.focus();
@@ -622,6 +628,20 @@ function saveBench(results: BenchResults) {
     localStorage.setItem(BENCH_STORAGE, JSON.stringify(results));
   } catch {}
 }
+/** Which models the speed test runs on, as {@link routeKey}s. */
+function loadBenchPick(): string[] {
+  try {
+    const keys = JSON.parse(localStorage.getItem(BENCH_PICK_STORAGE) || "[]");
+    return Array.isArray(keys) ? keys : [];
+  } catch {
+    return [];
+  }
+}
+function saveBenchPick(keys: string[]) {
+  try {
+    localStorage.setItem(BENCH_PICK_STORAGE, JSON.stringify(keys));
+  } catch {}
+}
 
 const formatMs = (ms: number) => (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`);
 /** Under 1s feels instant next to a finished reply; over 3s the user is already typing. */
@@ -770,6 +790,7 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
   const [failed, setFailed] = React.useState(false);
   const [bench, setBench] = React.useState<BenchResults>(loadBench);
   const [benchProgress, setBenchProgress] = React.useState<{ done: number; total: number } | null>(null);
+  const [benchPick, setBenchPick] = React.useState<string[]>(loadBenchPick);
   const [recent, setRecent] = React.useState<Timing | null | undefined>(undefined);
 
   // The last real prediction's timing, so a slow model shows up as slow.
@@ -849,13 +870,21 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
     void write([["provider", p], ["model", m]]);
   };
 
+  const pickBench = (keys: string[]) => {
+    setBenchPick(keys);
+    saveBenchPick(keys);
+  };
+  const pickedRows = (models ?? []).filter((row) => benchPick.includes(routeKey(row.provider, row.model)));
+
   // Two at a time: fast enough, and gentle on per-provider rate limits.
+  // Only the picked models are called; earlier results for the others stay.
   const runBench = async () => {
-    const rows = models ?? [];
+    const rows = pickedRows;
     if (!rows.length || benchProgress) return;
-    const results: BenchResults = {};
+    const results: BenchResults = { ...bench };
+    for (const row of rows) delete results[routeKey(row.provider, row.model)];
     let done = 0;
-    setBench({});
+    setBench({ ...results });
     setBenchProgress({ done, total: rows.length });
     const queue = [...rows];
     const worker = async () => {
@@ -962,7 +991,7 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
       </div>
 
       <div className={enabled ? undefined : "np-dim"}>
-        <div className="np-row" style={ranked.length ? { borderBottom: "none" } : undefined}>
+        <div className="np-row" style={models?.length || ranked.length ? { borderBottom: "none" } : undefined}>
           <div className="np-text">
             <div className="np-title">{t("card.bench")}</div>
             <div className="np-desc">{t("card.bench.hint")}</div>
@@ -970,14 +999,55 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
           <button
             type="button"
             className="np-btn"
-            disabled={!enabled || !models?.length || benchProgress !== null}
+            disabled={!enabled || !pickedRows.length || benchProgress !== null}
             onClick={() => void runBench()}
           >
             {benchProgress
               ? t("card.bench.running", { done: String(benchProgress.done), total: String(benchProgress.total) })
-              : t(ranked.length ? "card.bench.again" : "card.bench.start")}
+              : t("card.bench.start", { count: String(pickedRows.length) })}
           </button>
         </div>
+        {models?.length ? (
+          <>
+            <div className="np-pick-actions">
+              <button
+                type="button"
+                className="np-btn"
+                disabled={!enabled || benchProgress !== null}
+                onClick={() => pickBench(models.map((row) => routeKey(row.provider, row.model)))}
+              >
+                {t("card.bench.all")}
+              </button>
+              <button
+                type="button"
+                className="np-btn"
+                disabled={!enabled || benchProgress !== null || !benchPick.length}
+                onClick={() => pickBench([])}
+              >
+                {t("card.bench.clear")}
+              </button>
+            </div>
+            <div className="np-pick">
+              {models.map((row) => {
+                const key = routeKey(row.provider, row.model);
+                const picked = benchPick.includes(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="np-btn"
+                    aria-pressed={picked}
+                    title={`${row.providerName} / ${row.model}`}
+                    disabled={!enabled || benchProgress !== null}
+                    onClick={() => pickBench(picked ? benchPick.filter((k) => k !== key) : [...benchPick, key])}
+                  >
+                    {row.name}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
         {ranked.length ? (
           <div className="np-bench">
             {ranked.map(({ row, key, result }) => (
