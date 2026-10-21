@@ -90,6 +90,18 @@ const zh = {
   "card.recent": "最近一次预测用了 {ms}（{model}）",
   "card.recent.think": "，其中模型思考了约 {chars} 字——思考型模型会明显变慢",
   "card.recent.none": "还没有实际预测记录，聊一轮后这里会显示耗时。",
+  "card.usage": "Token 用量",
+  "card.usage.hint": "自 dsh 启动以来，预测和测速调用模型消耗的 token，重启后清零。输入不含缓存命中的部分。",
+  "card.usage.refresh": "刷新",
+  "card.usage.model": "模型",
+  "card.usage.calls": "调用",
+  "card.usage.input": "输入",
+  "card.usage.cached": "缓存命中",
+  "card.usage.output": "输出",
+  "card.usage.total": "合计",
+  "card.usage.reasoning": "其中思考 {tokens}",
+  "card.usage.unreported": "另有 {count} 次调用中途结束（Esc 取消、超时或被新一轮顶掉），供应商没有返回用量，未计入。",
+  "card.usage.empty": "还没有调用记录。",
   "card.unavailable":
     "当前 dsh 未提供插件设置服务，可在 profile 的 cordis.patch.yml 中为 id 为 next-prompt 的条目配置 enabled / provider / model。",
 };
@@ -130,6 +142,18 @@ const en: Record<TKey, string> = {
   "card.recent": "The last prediction took {ms} ({model})",
   "card.recent.think": "; the model thought for about {chars} characters first — reasoning models are noticeably slower",
   "card.recent.none": "No real predictions yet; the timing shows here after a turn.",
+  "card.usage": "Token usage",
+  "card.usage.hint": "Tokens spent by prediction and speed-test calls since dsh started; reset on restart. Input excludes cache hits.",
+  "card.usage.refresh": "Refresh",
+  "card.usage.model": "Model",
+  "card.usage.calls": "Calls",
+  "card.usage.input": "Input",
+  "card.usage.cached": "Cached",
+  "card.usage.output": "Output",
+  "card.usage.total": "Total",
+  "card.usage.reasoning": "{tokens} of it thinking",
+  "card.usage.unreported": "{count} more calls ended early (Esc, timeout or a newer turn); the provider sent no usage for them, so they are not counted.",
+  "card.usage.empty": "No calls yet.",
   "card.unavailable":
     "This dsh offers no plugin settings service. Set enabled / provider / model on the next-prompt entry in the profile's cordis.patch.yml.",
 };
@@ -339,6 +363,13 @@ const CSS = `
 .np-fast{color:var(--dsw-alias-state-success-primary,#1a9e5a)}.np-mid{color:var(--dsw-alias-state-warning-primary,#c98a00)}.np-slow{color:var(--dsw-alias-state-error-primary,#d33)}
 .np-recent{margin-top:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
 .np-empty{padding:16px 8px;text-align:center;font-size:12px;color:var(--dsw-alias-label-caption)}
+.np-usage{display:flex;flex-direction:column;padding:0 0 16px;overflow-x:auto}
+.np-usage-row{display:flex;align-items:center;gap:10px;padding:6px 8px;font-size:13px;min-width:max-content}
+.np-usage-head{font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption)}
+.np-usage-total{border-top:.5px solid var(--dsw-alias-border-l2);font-weight:500}
+.np-usage-name{flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np-usage-num{flex:none;width:72px;text-align:right;font-variant-numeric:tabular-nums}
+.np-usage-note{padding:4px 8px 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
 
 .np-switch{flex:none;width:36px;height:20px;border-radius:999px;border:none;padding:2px;cursor:pointer;background:var(--dsw-alias-border-l4,#8886);transition:background .15s}
 .np-switch[aria-checked=true]{background:var(--dsw-alias-state-business-primary,#3e58d6)}
@@ -646,6 +677,83 @@ type Timing = {
   totalMs: number;
   reasoningChars: number;
 };
+
+/** Mirrors the Host's per-route UsageTotals. */
+type UsageRow = {
+  provider: string;
+  model: string;
+  calls: number;
+  reported: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+};
+type UsageReport = { since: number; models: UsageRow[] };
+
+const formatTokens = (n: number) =>
+  n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
+
+/** Calls and tokens per model, most input first, with a total row. */
+function UsageTable({ t, usage, models }: { t: Translate; usage: UsageReport; models: ModelRow[] | null }) {
+  const rows = [...usage.models].sort(
+    (a, b) => b.inputTokens + b.cacheReadTokens - (a.inputTokens + a.cacheReadTokens),
+  );
+  if (!rows.length) return <div className="np-usage-note">{t("card.usage.empty")}</div>;
+  const total = rows.reduce(
+    (sum, row) => ({
+      calls: sum.calls + row.calls,
+      reported: sum.reported + row.reported,
+      inputTokens: sum.inputTokens + row.inputTokens + row.cacheWriteTokens,
+      cacheReadTokens: sum.cacheReadTokens + row.cacheReadTokens,
+      outputTokens: sum.outputTokens + row.outputTokens,
+      reasoningTokens: sum.reasoningTokens + row.reasoningTokens,
+    }),
+    { calls: 0, reported: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+  );
+  const num = (n: number, title?: string) => (
+    <span className="np-usage-num" title={title ?? n.toLocaleString()}>{formatTokens(n)}</span>
+  );
+  const output = (out: number, reasoning: number) =>
+    num(out, reasoning ? `${out.toLocaleString()} (${t("card.usage.reasoning", { tokens: reasoning.toLocaleString() })})` : undefined);
+  return (
+    <div className="np-usage">
+      <div className="np-usage-row np-usage-head">
+        <span className="np-usage-name">{t("card.usage.model")}</span>
+        <span className="np-usage-num">{t("card.usage.calls")}</span>
+        <span className="np-usage-num">{t("card.usage.input")}</span>
+        <span className="np-usage-num">{t("card.usage.cached")}</span>
+        <span className="np-usage-num">{t("card.usage.output")}</span>
+      </div>
+      {rows.map((row) => {
+        const name = models?.find((m) => m.provider === row.provider && m.model === row.model)?.name ?? row.model;
+        return (
+          <div className="np-usage-row" key={routeKey(row.provider, row.model)}>
+            <span className="np-usage-name" title={`${row.provider} / ${row.model}`}>{name}</span>
+            <span className="np-usage-num">{row.reported}</span>
+            {/* Cache writes are billed as input; fold them in rather than add a column. */}
+            {num(row.inputTokens + row.cacheWriteTokens)}
+            {num(row.cacheReadTokens)}
+            {output(row.outputTokens, row.reasoningTokens)}
+          </div>
+        );
+      })}
+      {rows.length > 1 ? (
+        <div className="np-usage-row np-usage-total">
+          <span className="np-usage-name">{t("card.usage.total")}</span>
+          <span className="np-usage-num">{total.reported}</span>
+          {num(total.inputTokens)}
+          {num(total.cacheReadTokens)}
+          {output(total.outputTokens, total.reasoningTokens)}
+        </div>
+      ) : null}
+      {total.calls > total.reported ? (
+        <div className="np-usage-note">{t("card.usage.unreported", { count: String(total.calls - total.reported) })}</div>
+      ) : null}
+    </div>
+  );
+}
 
 type BenchResult = { ms?: number; suggestion?: string | null; thinkChars?: number; error?: string };
 /** Speed-test results keyed by {@link routeKey}. */
@@ -971,10 +1079,11 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
   const [benchProgress, setBenchProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [benchPick, setBenchPick] = React.useState<string[]>(loadBenchPick);
   const [recent, setRecent] = React.useState<Timing | null | undefined>(undefined);
+  const [usage, setUsage] = React.useState<UsageReport | null>(null);
 
-  // The last real prediction's timing, so a slow model shows up as slow.
-  React.useEffect(() => {
-    let live = true;
+  // The last real prediction's timing, so a slow model shows up as slow, and the token usage so far.
+  const liveRef = React.useRef(true);
+  const refreshStats = React.useCallback(() => {
     fetch(BENCH_PATH, {
       method: "POST",
       cache: "no-store",
@@ -983,12 +1092,20 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
       body: "{}",
     })
       .then((res) => res.json())
-      .then((body) => live && setRecent(body?.recent?.[body.recent.length - 1] ?? null))
-      .catch(() => live && setRecent(null));
-    return () => {
-      live = false;
-    };
+      .then((body) => {
+        if (!liveRef.current) return;
+        setRecent(body?.recent?.[body.recent.length - 1] ?? null);
+        setUsage(body?.usage ?? null);
+      })
+      .catch(() => liveRef.current && setRecent(null));
   }, []);
+  React.useEffect(() => {
+    liveRef.current = true;
+    refreshStats();
+    return () => {
+      liveRef.current = false;
+    };
+  }, [refreshStats]);
 
   React.useEffect(() => {
     let live = true;
@@ -1079,6 +1196,7 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
             body: JSON.stringify({ provider: row.provider, model: row.model, lang }),
           });
           const body = await res.json();
+          if (body.usage) setUsage(body.usage);
           results[key] = body.error
             ? { error: String(body.error) }
             : { ms: body.timing?.totalMs, suggestion: body.suggestion ?? null, thinkChars: body.timing?.reasoningChars ?? 0 };
@@ -1241,6 +1359,21 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
           </div>
         ) : null}
       </div>
+
+      {usage ? (
+        <div>
+          <div className="np-row" style={{ borderBottom: "none" }}>
+            <div className="np-text">
+              <div className="np-title">{t("card.usage")}</div>
+              <div className="np-desc">{t("card.usage.hint")}</div>
+            </div>
+            <button type="button" className="np-btn np-btn-tall" onClick={refreshStats}>
+              {t("card.usage.refresh")}
+            </button>
+          </div>
+          <UsageTable t={t} usage={usage} models={models} />
+        </div>
+      ) : null}
 
       {failed ? <div className="np-error" role="alert">{t("card.saveFailed")}</div> : null}
     </div>

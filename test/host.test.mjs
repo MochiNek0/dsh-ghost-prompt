@@ -6,6 +6,7 @@ import {
   answerableKey,
   transcriptOf,
   frameTranscript,
+  addUsage,
 } from '../dist/index.js'
 
 let seq = 0
@@ -86,4 +87,12 @@ test('transcriptOf keeps looking for a user message past the budget', () => {
   for (let i = 0; i < 50; i++) events.push(toolStep('edit'), reply(`step ${i} `.repeat(100)))
   const t = transcriptOf(events, 1000)
   assert.equal(t[0].role, 'user')
+})
+
+test('addUsage sums reported calls and counts unreported ones', () => {
+  const totals = { calls: 0, reported: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 }
+  addUsage(totals, { inputTokens: 100, outputTokens: 10, cacheReadTokens: 900 })
+  addUsage(totals, { inputTokens: 50, outputTokens: 5, reasoningTokens: 3, cacheWriteTokens: 20 })
+  addUsage(totals, undefined)
+  assert.deepEqual(totals, { calls: 3, reported: 2, inputTokens: 150, cacheReadTokens: 900, cacheWriteTokens: 20, outputTokens: 15, reasoningTokens: 3 })
 })

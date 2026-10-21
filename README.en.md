@@ -11,6 +11,7 @@ Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn
 - While what you type matches the start of the suggestion (case-insensitively), the rest stays as ghost text after it; Ctrl+→ (⌥→ on macOS) accepts one word at a time, Esc dismisses.
 - Typing something that doesn't match only hides the suggestion: delete back to its start (or clear the draft) and it shows again. Pressing Esc drops that turn's prediction for good, and a prediction call still running on the host is aborted.
 - Choose the prediction model (defaults to the current session's model) and flip the feature on/off — both live in the sidebar under **Plugins → Prompt Suggestions**.
+- The same page has a **Token usage** panel: input / cached / output tokens spent by prediction and speed-test calls, per model (from the usage the provider reports; reset when dsh restarts).
 - Bilingual UI (zh / en), following **Settings → General → Language**; the sample conversation used for the speed test switches language along with it.
 - Predictions are only fired while browser UI is actually watching: headless runs and scheduled tasks spend no extra tokens, and nothing is predicted while a goal is about to continue on its own. Multiple tabs on the same session still trigger only one model call.
 

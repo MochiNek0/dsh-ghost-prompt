@@ -296,6 +296,44 @@ type Timing = {
   effort: string | null
 }
 
+/** Token counts summed over calls; `reported` counts the calls whose provider sent usage. */
+export type UsageTotals = {
+  calls: number
+  reported: number
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  outputTokens: number
+  reasoningTokens: number
+}
+
+const emptyTotals = (): UsageTotals => ({
+  calls: 0,
+  reported: 0,
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+})
+
+/**
+ * Count one call into `totals`. `usage` is the call's `usage` chunk; it is
+ * missing when the stream was cut before the provider sent it (Esc, timeout,
+ * a newer turn), so such a call counts but adds no tokens.
+ */
+export function addUsage(totals: UsageTotals, usage: any): UsageTotals {
+  totals.calls++
+  if (!usage) return totals
+  totals.reported++
+  totals.inputTokens += Number(usage.inputTokens) || 0
+  totals.cacheReadTokens += Number(usage.cacheReadTokens) || 0
+  totals.cacheWriteTokens += Number(usage.cacheWriteTokens) || 0
+  totals.outputTokens += Number(usage.outputTokens) || 0
+  totals.reasoningTokens += Number(usage.reasoningTokens) || 0
+  return totals
+}
+
 type Pending = {
   /** Seq of the final assistant reply this suggestion answers. */
   key: number
@@ -327,6 +365,16 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     timings.push(timing)
     if (timings.length > 20) timings.shift()
   }
+  /** Token usage of every call this entry made (predictions and speed tests), per route, since it started. */
+  const usageSince = Date.now()
+  const usage = new Map<string, { provider: string; model: string } & UsageTotals>()
+  const recordUsage = (route: { provider: string; model: string }, chunk: any) => {
+    const key = `${route.provider}\u0000${route.model}`
+    let entry = usage.get(key)
+    if (!entry) usage.set(key, (entry = { provider: route.provider, model: route.model, ...emptyTotals() }))
+    addUsage(entry, chunk)
+  }
+  const usageReport = () => ({ since: usageSince, models: [...usage.values()] })
   /** sessionId → last time a browser asked about it. */
   const watched = new Map<string, number>()
 
@@ -388,6 +436,7 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     const texts = new Map<number, string>()
     const joined = () => [...texts.entries()].sort((a, b) => a[0] - b[0]).map(([, text]) => text).join('')
     let finish: any
+    let usageChunk: any
     // Our own controller, so a complete first line can stop the call early.
     const stop = new AbortController()
     const streamSignal = AbortSignal.any([callSignal, stop.signal])
@@ -412,10 +461,13 @@ export function apply(ctx: any, rawConfig: RawConfig) {
             stop.abort()
             break
           }
-        } else if (chunk.type === 'finish') finish = chunk.reason
+        } else if (chunk.type === 'usage') usageChunk = chunk.usage
+        else if (chunk.type === 'finish') finish = chunk.reason
       }
     } catch (error) {
       if (!stop.signal.aborted || callSignal.aborted) throw error
+    } finally {
+      recordUsage(route, usageChunk)
     }
     if (!stop.signal.aborted && (finish?.kind === 'error' || finish?.kind === 'aborted')) {
       throw new Error(finish.failure?.message ?? `model call ${finish.kind}`)
@@ -692,8 +744,8 @@ export function apply(ctx: any, rawConfig: RawConfig) {
         const current = config()
         const provider = String(body?.provider ?? '')
         const model = String(body?.model ?? '')
-        // No route: the card only wants the recent real timings.
-        if (!provider || !model) return jsonResponse(200, { recent: timings })
+        // No route: the card only wants the recent real timings and the token usage.
+        if (!provider || !model) return jsonResponse(200, { recent: timings, usage: usageReport() })
         try {
           const { suggestion, timing } = await runModel(
             { provider, model },
@@ -703,9 +755,9 @@ export function apply(ctx: any, rawConfig: RawConfig) {
             request.signal,
             () => {},
           )
-          return jsonResponse(200, { suggestion, timing, recent: timings })
+          return jsonResponse(200, { suggestion, timing, recent: timings, usage: usageReport() })
         } catch (error: any) {
-          return jsonResponse(200, { error: String(error?.message ?? error), recent: timings })
+          return jsonResponse(200, { error: String(error?.message ?? error), recent: timings, usage: usageReport() })
         }
       },
     }), 'next-prompt: bench route')
