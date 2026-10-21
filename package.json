@@ -64,7 +64,8 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs"
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs",
+    "test": "pnpm run build && node --test"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.3"

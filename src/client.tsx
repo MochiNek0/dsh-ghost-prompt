@@ -12,6 +12,7 @@ const SUGGEST_PATH = "api/next-prompt/suggest";
 const MODELS_PATH = "api/next-prompt/models";
 const BENCH_PATH = "api/next-prompt/bench";
 const DISMISS_PATH = "api/next-prompt/dismiss";
+const WATCH_PATH = "api/next-prompt/watch";
 const BENCH_STORAGE = "dsh-ghost-prompt:bench";
 const BENCH_PICK_STORAGE = "dsh-ghost-prompt:bench-pick";
 
@@ -24,6 +25,20 @@ const WORD_KEY_LABEL = isMac ? "⌥→" : "Ctrl+→";
 
 /** Set once `configForms` is there, so the ghost can read `acceptKey`. */
 let configForm: any;
+const configFormListeners = new Set<() => void>();
+function setConfigForm(form: any) {
+  configForm = form;
+  for (const listener of configFormListeners) listener();
+}
+/** {@link configForm}, re-rendering when it arrives after the ghost mounted. */
+const useConfigForm = () =>
+  React.useSyncExternalStore(
+    React.useCallback((listener: () => void) => {
+      configFormListeners.add(listener);
+      return () => configFormListeners.delete(listener);
+    }, []),
+    () => configForm,
+  );
 
 /**
  * dsh's shared UI kit (Switch, icons), answered by the page's module loader.
@@ -58,8 +73,11 @@ const zh = {
   "card.model.missing": "已配置，但当前不可用",
   "card.saveFailed": "保存失败，已恢复为服务器上的值",
   "card.bench": "模型测速",
-  "card.bench.hint": "勾选要测的模型，用一段固定的对话各实际调用一次，看谁出预测最快、预测得怎么样。每个模型会产生一次调用费用。",
-  "card.bench.start": "测速所选（{count}）",
+  "card.bench.hint": "选几个要测的模型，用一段固定的对话各实际调用一次，看谁出预测最快、预测得怎么样。每个模型会产生一次调用费用。",
+  "card.bench.start": "开始测速（{count}）",
+  "card.bench.pick": "选择模型（{count}）",
+  "card.bench.untested": "未测",
+  "card.bench.remove": "移除",
   "card.bench.all": "全选",
   "card.bench.clear": "清空",
   "card.bench.running": "测速中 {done}/{total}",
@@ -95,8 +113,11 @@ const en: Record<TKey, string> = {
   "card.model.missing": "Configured, currently unavailable",
   "card.saveFailed": "Save failed; reverted to the stored value",
   "card.bench": "Speed test",
-  "card.bench.hint": "Tick the models to test; each is called once on a fixed conversation to see which predicts fastest, and how well. Each model costs one call.",
-  "card.bench.start": "Test selected ({count})",
+  "card.bench.hint": "Pick the models to test; each is called once on a fixed conversation to see which predicts fastest, and how well. Each model costs one call.",
+  "card.bench.start": "Run ({count})",
+  "card.bench.pick": "Models ({count})",
+  "card.bench.untested": "Not run yet",
+  "card.bench.remove": "Remove",
   "card.bench.all": "All",
   "card.bench.clear": "Clear",
   "card.bench.running": "Testing {done}/{total}",
@@ -195,9 +216,9 @@ async function streamSuggestion(
   }
 }
 
-/** Tell the Host the user moved on, so it stops (or forgets) this turn's prediction. */
-function dismissSuggestion(sessionId: string) {
-  fetch(DISMISS_PATH, {
+/** Fire-and-forget POST to a Host route; nothing waits on the answer. */
+function notifyHost(path: string, sessionId: string) {
+  fetch(path, {
     method: "POST",
     cache: "no-store",
     credentials: "same-origin",
@@ -207,18 +228,27 @@ function dismissSuggestion(sessionId: string) {
   }).catch(() => {});
 }
 
+/** Tell the Host the user moved on, so it stops (or forgets) this turn's prediction. */
+function dismissSuggestion(sessionId: string) {
+  notifyHost(DISMISS_PATH, sessionId);
+}
+
 /** The editor may hold non-breaking spaces where the suggestion has plain ones. */
-const normalizeDraft = (draft: string) => draft.replace(/ /g, " ");
+export const normalizeDraft = (draft: string) => draft.replace(/ /g, " ");
+
+/** `text.startsWith(prefix)`, ignoring case: typing "Yes" stays on "yes, go ahead". */
+const startsWithLoose = (text: string, prefix: string) =>
+  text.length >= prefix.length && text.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase();
 
 /**
  * Whether the draft is still on the suggestion's path: a prefix of it, or —
  * while it is still streaming — typed ahead of what has arrived so far.
  */
-const onPath = (draft: string, suggestion: string, complete: boolean) =>
-  suggestion.startsWith(draft) || (!complete && draft.startsWith(suggestion));
+export const onPath = (draft: string, suggestion: string, complete: boolean) =>
+  startsWithLoose(suggestion, draft) || (!complete && startsWithLoose(draft, suggestion));
 
 /** The next word of `rest` plus the spaces / punctuation after it. */
-function nextWord(rest: string): string {
+export function nextWord(rest: string): string {
   const Segmenter = (Intl as any).Segmenter;
   if (!Segmenter) return /^\s*\S+\s*/.exec(rest)?.[0] ?? rest;
   let end = 0;
@@ -287,15 +317,18 @@ const CSS = `
 .np-option-name{font-size:13px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .np-option-sub{font-size:11px;line-height:16px;color:var(--dsw-alias-label-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .np-check{flex:none;width:14px;display:inline-flex;color:var(--dsw-alias-state-business-primary,#3e58d6)}
-.np-pick{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
-.np-pick .np-btn[aria-pressed=true]{border-color:var(--dsw-alias-state-business-primary,#3e58d6);color:var(--dsw-alias-label-primary-bluish,var(--dsw-alias-state-business-primary,#3e58d6))}
-.np-pick-actions{display:flex;gap:6px;padding:0 0 8px}
-.np-bench{display:flex;flex-direction:column;gap:2px;padding:0 0 16px}
+.np-menu-toolbar{display:flex;gap:6px;padding:8px 10px;border-bottom:.5px solid var(--dsw-alias-border-l2)}
+.np-bench-actions{flex:none;display:flex;align-items:center;gap:8px}
+.np-btn.np-btn-tall{height:32px}
+.np-bench{display:flex;flex-direction:column;gap:2px;padding:0 0 16px;max-height:320px;overflow-y:auto}
 .np-bench-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--dsw-radius-sm,8px)}
 .np-bench-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .np-bench-ms{flex:none;width:56px;font-size:13px;font-variant-numeric:tabular-nums;text-align:right}
 .np-bench-name{flex:none;width:200px;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .np-bench-sample{flex:1;min-width:0;font-size:12px;color:var(--dsw-alias-label-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np-remove{flex:none;width:24px;height:24px;padding:0;font:inherit;font-size:16px;line-height:1;color:var(--dsw-alias-label-caption);background:transparent;border:none;border-radius:var(--dsw-radius-sm,8px);cursor:pointer}
+.np-remove:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
+.np-remove:disabled{opacity:.5;cursor:default}
 .np-tag{flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-state-business-tertiary,#3e58d61a);color:var(--dsw-alias-label-primary-bluish,var(--dsw-alias-state-business-primary,#3e58d6))}
 .np-btn{flex:none;height:28px;padding:0 12px;font:inherit;font-size:12px;color:var(--dsw-alias-label-primary);background:transparent;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm,8px);cursor:pointer;white-space:nowrap}
 .np-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
@@ -351,7 +384,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
   const running: boolean = useSession((s: any) => s?.running === true);
   const draft: string = useInput((s: any) => s?.draft ?? "");
   const phase: string = useInput((s: any) => s?.phase ?? "plain");
-  const form = configForm;
+  const form = useConfigForm();
   const formValue = React.useSyncExternalStore(
     React.useCallback((listener: () => void) => (form ? form.subscribe(listener) : () => {}), [form]),
     () => form?.getSnapshot()?.value,
@@ -412,7 +445,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
           if (streamRef.current === token) streamRef.current = null;
         });
     },
-    [sessionId, retire],
+    [sessionId],
   );
 
   // A session opened idle may already have an answer (or one in flight) on
@@ -434,6 +467,8 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
     wasRunning.current = running;
     if (running) {
       setSuggestion(null);
+      // Keep the Host's watch fresh so this turn's prediction starts early.
+      if (!prev) notifyHost(WATCH_PATH, sessionId);
       return;
     }
     if (!prev) return;
@@ -475,7 +510,8 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
   const acceptRef = React.useRef<(word: boolean) => boolean>(() => false);
   acceptRef.current = (word) => {
     if (!visible || !target || !suggestion) return false;
-    const text = word ? suggestion.slice(0, typed.length + nextWord(rest).length) : suggestion;
+    // The typed prefix stays as typed (its case may differ from the suggestion's).
+    const text = typed + (word ? nextWord(rest) : rest);
     const { editable } = target;
     // Kept even when accepted whole: deleting the text back brings the ghost back.
     inputActions.setDraft(text);
@@ -529,7 +565,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
               className={target.className || undefined}
               style={target.className ? undefined : GHOST_FALLBACK_STYLE}
             >
-              {typed ? <span style={{ visibility: "hidden" }}>{suggestion.slice(0, typed.length)}</span> : null}
+              {typed ? <span style={{ visibility: "hidden" }}>{typed}</span> : null}
               {rest}
               {complete ? (
                 <kbd
@@ -652,26 +688,11 @@ function SpeedLabel({ t, result }: { t: Translate; result: BenchResult }) {
   return <span className={`np-option-sub ${speedClass(result.ms)}`}>{formatMs(result.ms)}</span>;
 }
 
-/** Searchable model menu: "follow the session" first, then models grouped by provider. */
-function ModelPicker({ t, models, selected, provider, model, disabled, onSelect, bench }: {
-  bench: BenchResults;
-  t: Translate;
-  models: ModelRow[] | null;
-  selected: string;
-  provider: string;
-  model: string;
-  disabled: boolean;
-  onSelect: (key: string) => void;
-}) {
+/** Open/close state for a popover under `rootRef`; a pointer outside it or Esc closes it. */
+function usePopover(rootRef: React.RefObject<HTMLElement | null>) {
   const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState("");
-  const rootRef = React.useRef<HTMLDivElement>(null);
-  const searchRef = React.useRef<HTMLInputElement>(null);
-
   React.useEffect(() => {
     if (!open) return;
-    setQuery("");
-    requestAnimationFrame(() => searchRef.current?.focus());
     const onPointer = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -684,12 +705,57 @@ function ModelPicker({ t, models, selected, provider, model, disabled, onSelect,
       document.removeEventListener("pointerdown", onPointer, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, rootRef]);
+  return [open, setOpen] as const;
+}
 
-  const current = (models ?? []).find((r) => routeKey(r.provider, r.model) === selected);
-  const label =
-    selected === FOLLOW ? t("card.model.follow") : current ? current.name : `${provider} / ${model}`;
-  const currentMs = bench[selected]?.ms;
+function ModelOption({ t, checked, name, sub, speed, onClick }: {
+  t: Translate;
+  checked: boolean;
+  name: string;
+  sub?: string;
+  speed?: BenchResult;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={checked}
+      className="np-option"
+      data-active={checked ? "" : undefined}
+      onClick={onClick}
+    >
+      <span className="np-check">{checked ? <Icon name="IconCheckOutlineRegular" fallback="✓" /> : null}</span>
+      <span className="np-option-text">
+        <div className="np-option-name">{name}</div>
+        {sub ? <div className="np-option-sub">{sub}</div> : null}
+      </span>
+      {speed ? <SpeedLabel t={t} result={speed} /> : null}
+    </button>
+  );
+}
+
+/**
+ * Search box over the models, grouped by provider. `head` gives the extra
+ * options above the groups for the current query; `toolbar` sits under the
+ * search box and sees the rows that match it.
+ */
+function ModelMenu({ t, models, bench, multi, isChecked, onPick, head, toolbar }: {
+  t: Translate;
+  models: ModelRow[] | null;
+  bench: BenchResults;
+  multi?: boolean;
+  isChecked: (key: string) => boolean;
+  onPick: (key: string) => void;
+  head?: (q: string) => React.ReactNode[];
+  toolbar?: (matches: ModelRow[]) => React.ReactNode;
+}) {
+  const [query, setQuery] = React.useState("");
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }, []);
 
   const q = query.trim().toLowerCase();
   const matches = (models ?? []).filter(
@@ -701,29 +767,102 @@ function ModelPicker({ t, models, selected, provider, model, disabled, onSelect,
     if (!group) groups.push((group = { provider: row.provider, providerName: row.providerName, rows: [] }));
     group.rows.push(row);
   }
-  const showFollow = !q || t("card.model.follow").toLowerCase().includes(q);
+  const extra = head?.(q) ?? [];
+
+  return (
+    <div className="np-menu" role="listbox" aria-multiselectable={multi || undefined}>
+      <div className="np-search">
+        <Icon name="IconSearchOutlineRegular" fallback="⌕" />
+        <input
+          ref={searchRef}
+          value={query}
+          placeholder={t("card.model.search")}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      {toolbar && models?.length ? <div className="np-menu-toolbar">{toolbar(matches)}</div> : null}
+      <div className="np-list">
+        {extra}
+        {models === null ? <div className="np-empty">{t("card.model.loading")}</div> : null}
+        {groups.map((group) => (
+          <React.Fragment key={group.provider}>
+            <div className="np-group">{group.providerName || group.provider}</div>
+            {group.rows.map((row) => {
+              const key = routeKey(row.provider, row.model);
+              return (
+                <ModelOption
+                  key={key}
+                  t={t}
+                  checked={isChecked(key)}
+                  name={row.name}
+                  sub={row.name !== row.model ? row.model : undefined}
+                  speed={bench[key]}
+                  onClick={() => onPick(key)}
+                />
+              );
+            })}
+          </React.Fragment>
+        ))}
+        {models !== null && q && groups.length === 0 && extra.length === 0 ? (
+          <div className="np-empty">{t("card.model.empty")}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Single-select model menu: "follow the session" first, then models grouped by provider. */
+function ModelPicker({ t, models, selected, provider, model, disabled, onSelect, bench }: {
+  bench: BenchResults;
+  t: Translate;
+  models: ModelRow[] | null;
+  selected: string;
+  provider: string;
+  model: string;
+  disabled: boolean;
+  onSelect: (key: string) => void;
+}) {
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const [open, setOpen] = usePopover(rootRef);
+
+  const current = (models ?? []).find((r) => routeKey(r.provider, r.model) === selected);
+  const label =
+    selected === FOLLOW ? t("card.model.follow") : current ? current.name : `${provider} / ${model}`;
+  const currentMs = bench[selected]?.ms;
 
   const pick = (key: string) => {
     setOpen(false);
     if (key !== selected) onSelect(key);
   };
 
-  const option = (key: string, name: string, sub: string | undefined, speed?: BenchResult) => (
-    <button
-      key={key || "follow"}
-      type="button"
-      className="np-option"
-      data-active={key === selected ? "" : undefined}
-      onClick={() => pick(key)}
-    >
-      <span className="np-check">{key === selected ? <Icon name="IconCheckOutlineRegular" fallback="✓" /> : null}</span>
-      <span className="np-option-text">
-        <div className="np-option-name">{name}</div>
-        {sub ? <div className="np-option-sub">{sub}</div> : null}
-      </span>
-      {speed ? <SpeedLabel t={t} result={speed} /> : null}
-    </button>
-  );
+  const head = (q: string) => {
+    const out: React.ReactNode[] = [];
+    if (!q || t("card.model.follow").toLowerCase().includes(q)) {
+      out.push(
+        <ModelOption
+          key="follow"
+          t={t}
+          checked={selected === FOLLOW}
+          name={t("card.model.follow")}
+          sub={t("card.model.follow.hint")}
+          onClick={() => pick(FOLLOW)}
+        />,
+      );
+    }
+    if (selected !== FOLLOW && !current && !q) {
+      out.push(
+        <ModelOption
+          key={selected}
+          t={t}
+          checked
+          name={`${provider} / ${model}`}
+          sub={t("card.model.missing")}
+          onClick={() => pick(selected)}
+        />,
+      );
+    }
+    return out;
+  };
 
   return (
     <div className="np-picker" ref={rootRef}>
@@ -743,35 +882,75 @@ function ModelPicker({ t, models, selected, provider, model, disabled, onSelect,
         </span>
       </button>
       {open ? (
-        <div className="np-menu" role="listbox">
-          <div className="np-search">
-            <Icon name="IconSearchOutlineRegular" fallback="⌕" />
-            <input
-              ref={searchRef}
-              value={query}
-              placeholder={t("card.model.search")}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div className="np-list">
-            {showFollow ? option(FOLLOW, t("card.model.follow"), t("card.model.follow.hint")) : null}
-            {selected !== FOLLOW && !current && !q
-              ? option(selected, `${provider} / ${model}`, t("card.model.missing"))
-              : null}
-            {models === null ? <div className="np-empty">{t("card.model.loading")}</div> : null}
-            {groups.map((group) => (
-              <React.Fragment key={group.provider}>
-                <div className="np-group">{group.providerName || group.provider}</div>
-                {group.rows.map((row) =>
-                  option(routeKey(row.provider, row.model), row.name, row.name !== row.model ? row.model : undefined, bench[routeKey(row.provider, row.model)]),
-                )}
-              </React.Fragment>
-            ))}
-            {models !== null && q && groups.length === 0 && !showFollow ? (
-              <div className="np-empty">{t("card.model.empty")}</div>
-            ) : null}
-          </div>
-        </div>
+        <ModelMenu
+          t={t}
+          models={models}
+          bench={bench}
+          isChecked={(key) => key === selected}
+          onPick={pick}
+          head={head}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Multi-select menu for the speed test; it stays open while models are ticked. */
+function BenchPicker({ t, models, picked, disabled, onChange, bench }: {
+  t: Translate;
+  models: ModelRow[] | null;
+  picked: string[];
+  disabled: boolean;
+  onChange: (keys: string[]) => void;
+  bench: BenchResults;
+}) {
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const [open, setOpen] = usePopover(rootRef);
+  const toggle = (key: string) =>
+    onChange(picked.includes(key) ? picked.filter((k) => k !== key) : [...picked, key]);
+
+  return (
+    <div className="np-picker" ref={rootRef}>
+      <button
+        type="button"
+        className="np-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="np-trigger-label">{t("card.bench.pick", { count: String(picked.length) })}</span>
+        <span className="np-chevron">
+          <Icon name="IconChevronDownOutlineRegular" fallback="▾" />
+        </span>
+      </button>
+      {open ? (
+        <ModelMenu
+          t={t}
+          models={models}
+          bench={bench}
+          multi
+          isChecked={(key) => picked.includes(key)}
+          onPick={toggle}
+          toolbar={(matches) => (
+            <>
+              <button
+                type="button"
+                className="np-btn"
+                disabled={!matches.length}
+                // Ticks what the search shows: while searching, "all" means all matches.
+                onClick={() =>
+                  onChange([...new Set([...picked, ...matches.map((row) => routeKey(row.provider, row.model))])])
+                }
+              >
+                {t("card.bench.all")}
+              </button>
+              <button type="button" className="np-btn" disabled={!picked.length} onClick={() => onChange([])}>
+                {t("card.bench.clear")}
+              </button>
+            </>
+          )}
+        />
       ) : null}
     </div>
   );
@@ -915,10 +1094,12 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
     setBenchProgress(null);
   };
 
-  const ranked = (models ?? [])
+  // Only the picked models are listed, so a long catalog never floods the card:
+  // fastest first, then failures, then the ones not run yet.
+  const rank = (result?: BenchResult) => (result ? result.ms ?? Number.MAX_SAFE_INTEGER : Infinity);
+  const ranked = pickedRows
     .map((row) => ({ row, key: routeKey(row.provider, row.model), result: bench[routeKey(row.provider, row.model)] }))
-    .filter((item) => item.result)
-    .sort((a, b) => (a.result!.ms ?? Infinity) - (b.result!.ms ?? Infinity));
+    .sort((a, b) => rank(a.result) - rank(b.result));
   const fastestKey = ranked[0]?.result?.ms !== undefined ? ranked[0].key : undefined;
 
   return (
@@ -991,77 +1172,52 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
       </div>
 
       <div className={enabled ? undefined : "np-dim"}>
-        <div className="np-row" style={models?.length || ranked.length ? { borderBottom: "none" } : undefined}>
+        <div className="np-row" style={ranked.length ? { borderBottom: "none" } : undefined}>
           <div className="np-text">
             <div className="np-title">{t("card.bench")}</div>
             <div className="np-desc">{t("card.bench.hint")}</div>
           </div>
-          <button
-            type="button"
-            className="np-btn"
-            disabled={!enabled || !pickedRows.length || benchProgress !== null}
-            onClick={() => void runBench()}
-          >
-            {benchProgress
-              ? t("card.bench.running", { done: String(benchProgress.done), total: String(benchProgress.total) })
-              : t("card.bench.start", { count: String(pickedRows.length) })}
-          </button>
+          <div className="np-bench-actions">
+            <BenchPicker
+              t={t}
+              models={models}
+              picked={benchPick}
+              disabled={!enabled || benchProgress !== null}
+              onChange={pickBench}
+              bench={bench}
+            />
+            <button
+              type="button"
+              className="np-btn np-btn-tall"
+              disabled={!enabled || !pickedRows.length || benchProgress !== null}
+              onClick={() => void runBench()}
+            >
+              {benchProgress
+                ? t("card.bench.running", { done: String(benchProgress.done), total: String(benchProgress.total) })
+                : t("card.bench.start", { count: String(pickedRows.length) })}
+            </button>
+          </div>
         </div>
-        {models?.length ? (
-          <>
-            <div className="np-pick-actions">
-              <button
-                type="button"
-                className="np-btn"
-                disabled={!enabled || benchProgress !== null}
-                onClick={() => pickBench(models.map((row) => routeKey(row.provider, row.model)))}
-              >
-                {t("card.bench.all")}
-              </button>
-              <button
-                type="button"
-                className="np-btn"
-                disabled={!enabled || benchProgress !== null || !benchPick.length}
-                onClick={() => pickBench([])}
-              >
-                {t("card.bench.clear")}
-              </button>
-            </div>
-            <div className="np-pick">
-              {models.map((row) => {
-                const key = routeKey(row.provider, row.model);
-                const picked = benchPick.includes(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className="np-btn"
-                    aria-pressed={picked}
-                    title={`${row.providerName} / ${row.model}`}
-                    disabled={!enabled || benchProgress !== null}
-                    onClick={() => pickBench(picked ? benchPick.filter((k) => k !== key) : [...benchPick, key])}
-                  >
-                    {row.name}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
         {ranked.length ? (
           <div className="np-bench">
             {ranked.map(({ row, key, result }) => (
               <div className="np-bench-row" key={key}>
-                <span className={`np-bench-ms ${result!.ms !== undefined ? speedClass(result!.ms) : "np-slow"}`}>
-                  {result!.ms !== undefined ? formatMs(result!.ms) : t("card.bench.failed")}
+                <span
+                  className={`np-bench-ms ${
+                    !result ? "" : result.ms !== undefined ? speedClass(result.ms) : "np-slow"
+                  }`}
+                >
+                  {!result ? "—" : result.ms !== undefined ? formatMs(result.ms) : t("card.bench.failed")}
                 </span>
                 <span className="np-bench-name" title={`${row.providerName} / ${row.model}`}>{row.name}</span>
                 {key === fastestKey ? <span className="np-tag">{t("card.bench.fastest")}</span> : null}
-                <span className="np-bench-sample" title={result!.error ?? result!.suggestion ?? ""}>
-                  {result!.error ??
-                    (result!.suggestion ? t("card.bench.sample", { text: result!.suggestion }) : t("card.bench.empty"))}
+                <span className="np-bench-sample" title={result?.error ?? result?.suggestion ?? ""}>
+                  {!result
+                    ? t("card.bench.untested")
+                    : result.error ??
+                      (result.suggestion ? t("card.bench.sample", { text: result.suggestion }) : t("card.bench.empty"))}
                 </span>
-                {result!.ms !== undefined ? (
+                {result?.ms !== undefined ? (
                   key === selected ? (
                     <span className="np-tag">{t("card.bench.inUse")}</span>
                   ) : (
@@ -1070,6 +1226,16 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
                     </button>
                   )
                 ) : null}
+                <button
+                  type="button"
+                  className="np-remove"
+                  aria-label={t("card.bench.remove")}
+                  title={t("card.bench.remove")}
+                  disabled={!enabled || benchProgress !== null}
+                  onClick={() => pickBench(benchPick.filter((k) => k !== key))}
+                >
+                  ×
+                </button>
               </div>
             ))}
           </div>
@@ -1120,10 +1286,8 @@ export function apply(ctx: any) {
   ctx.inject(["configForms"], (fctx: any) => {
     const form = fctx.configForms.get(NAMESPACE);
     fctx.effect(() => {
-      configForm = form;
-      return () => {
-        configForm = undefined;
-      };
+      setConfigForm(form);
+      return () => setConfigForm(undefined);
     });
     fctx.slots.inject("plugins.bundle.config", () =>
       fctx.slots.register(

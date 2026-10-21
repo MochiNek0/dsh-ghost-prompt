@@ -30,6 +30,7 @@ export const SUGGEST_ROUTE = '/api/next-prompt/suggest'
 export const MODELS_ROUTE = '/api/next-prompt/models'
 export const BENCH_ROUTE = '/api/next-prompt/bench'
 export const DISMISS_ROUTE = '/api/next-prompt/dismiss'
+export const WATCH_ROUTE = '/api/next-prompt/watch'
 
 /**
  * A fixed, typical turn for the speed test: a finished task plus an offer.
@@ -175,36 +176,53 @@ function assistantText(event: SessionEvent): string | undefined {
 }
 
 /** Whether an `assistant/message` is the reply that closes its turn: complete, no tool calls. */
-function isFinalReply(event: SessionEvent): boolean {
+export function isFinalReply(event: SessionEvent): boolean {
   if (event.type !== 'assistant/message' || event.data?.interrupted) return false
   const content: any[] = event.data?.message?.content ?? []
   return content.some((b) => b?.type === 'text' && String(b.text ?? '').trim()) &&
     !content.some((b) => b?.type === 'tool-call')
 }
 
-/** Fold the log into alternating user/assistant entries, consecutive assistant steps merged. */
-function transcriptOf(events: readonly SessionEvent[]): Transcript[] {
+/** One transcript entry as the prediction model sees it. */
+const frameLine = (entry: Transcript) => `<${entry.role}>\n${clip(entry.text, PER_MESSAGE_CHARS)}\n</${entry.role}>`
+
+/**
+ * Fold the log into alternating user/assistant entries, consecutive assistant
+ * steps merged. Walks back from the newest event and stops once older entries
+ * could no longer fit {@link frameTranscript}'s `budget` (and a user message
+ * has been seen), so a long session costs no more than its tail.
+ */
+export function transcriptOf(events: readonly SessionEvent[], budget = Infinity): Transcript[] {
   const out: Transcript[] = []
-  for (const event of events) {
+  let used = 0
+  let sawUser = false
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
     const role = event.type === 'user/message' ? 'user' : event.type === 'assistant/message' ? 'assistant' : undefined
     if (!role) continue
     const text = role === 'user' ? userText(event) : assistantText(event)
     if (!text) continue
-    const last = out[out.length - 1]
-    if (last?.role === role) last.text += `\n${text}`
-    else out.push({ role, text })
+    const oldest = out[out.length - 1]
+    if (oldest?.role === role) {
+      oldest.text = `${text}\n${oldest.text}`
+      continue
+    }
+    if (oldest) {
+      used += frameLine(oldest).length
+      if (used > budget && sawUser) break
+    }
+    out.push({ role, text })
+    sawUser ||= role === 'user'
   }
-  return out
+  return out.reverse()
 }
 
 /** Newest-first packing under the char budget; the final assistant reply always fits (clipped). */
-function frameTranscript(transcript: Transcript[], budget: number): string {
+export function frameTranscript(transcript: Transcript[], budget: number): string {
   const lines: string[] = []
   let used = 0
   for (let i = transcript.length - 1; i >= 0; i--) {
-    const entry = transcript[i]
-    const text = clip(entry.text, PER_MESSAGE_CHARS)
-    const line = `<${entry.role}>\n${text}\n</${entry.role}>`
+    const line = frameLine(transcript[i])
     if (lines.length > 0 && used + line.length > budget) break
     lines.unshift(line)
     used += line.length
@@ -218,25 +236,50 @@ function frameTranscript(transcript: Transcript[], budget: number): string {
   ].join('\n')
 }
 
-const LEADING_JUNK = /^(?:(?:user|用户)\s*[:：]\s*)?["'“”‘’`「『]*/i
+const LEADING_PREFIX = /^(?:user|用户)\s*[:：]\s*/i
+const LEADING_QUOTES = /^["'“”‘’`「『]+/
 const TRAILING_QUOTES = /["'“”‘’`」』]+$/
 
 /**
- * The displayable prefix of a still-streaming first line: leading prefix and
- * quotes stripped, and nothing at all while it could still turn into NONE.
+ * The displayable prefix of a still-streaming first line: a "User:" prefix
+ * stripped, wrapping quotes stripped (a closing quote is kept unless the line
+ * also opened with one), and nothing at all while it could still turn into NONE.
  */
-function partialFromOutput(raw: string): string {
-  const line = raw.trimStart().split(/\r?\n/)[0].replace(LEADING_JUNK, '').replace(TRAILING_QUOTES, '')
+export function partialFromOutput(raw: string): string {
+  let line = raw.trimStart().split(/\r?\n/)[0].replace(LEADING_PREFIX, '')
+  if (LEADING_QUOTES.test(line)) line = line.replace(LEADING_QUOTES, '').replace(TRAILING_QUOTES, '')
   if ('NONE'.startsWith(line.trim().toUpperCase())) return ''
   return line
 }
 
 /** The final suggestion from the first line of model output; `null` for NONE or junk. */
-function suggestionFromOutput(raw: string): string | null {
-  let line = partialFromOutput(raw).replace(TRAILING_QUOTES, '').trim()
+export function suggestionFromOutput(raw: string): string | null {
+  let line = partialFromOutput(raw).trim()
   if (!line || /^none\.?$/i.test(line)) return null
   if (line.length > 300) line = `${line.slice(0, 299)}…`
   return line
+}
+
+/**
+ * The final-reply seq the user would be answering now, or `undefined` when
+ * there is none: no turn yet, one still running, or the last one ended in an
+ * error / cancel / block (a prediction there would guess at a failure).
+ */
+export function answerableKey(events: readonly SessionEvent[]): number | undefined {
+  let i = events.length - 1
+  for (; i >= 0; i--) {
+    const event = events[i]
+    if (event.type === 'turn/end') {
+      if (event.data?.reason?.kind !== 'completed') return undefined
+      break
+    }
+    if (event.type === 'turn/start' || event.type === 'user/message') return undefined
+  }
+  for (; i >= 0; i--) {
+    if (events[i].type === 'assistant/message') return isFinalReply(events[i]) ? events[i].seq : undefined
+    if (events[i].type === 'turn/start') return undefined
+  }
+  return undefined
 }
 
 type Timing = {
@@ -310,28 +353,6 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     } catch {
       return false
     }
-  }
-
-  /**
-   * The final-reply seq the user would be answering now, or `undefined` when
-   * there is none: no turn yet, one still running, or the last one ended in an
-   * error / cancel / block (a prediction there would guess at a failure).
-   */
-  const answerableKey = (events: readonly SessionEvent[]): number | undefined => {
-    let i = events.length - 1
-    for (; i >= 0; i--) {
-      const event = events[i]
-      if (event.type === 'turn/end') {
-        if (event.data?.reason?.kind !== 'completed') return undefined
-        break
-      }
-      if (event.type === 'turn/start' || event.type === 'user/message') return undefined
-    }
-    for (; i >= 0; i--) {
-      if (events[i].type === 'assistant/message') return isFinalReply(events[i]) ? events[i].seq : undefined
-      if (events[i].type === 'turn/start') return undefined
-    }
-    return undefined
   }
 
   /**
@@ -410,7 +431,7 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     onPartial: (text: string) => void,
   ): Promise<string | null> => {
     const current = config()
-    const transcript = transcriptOf(events)
+    const transcript = transcriptOf(events, current.maxContextChars)
     if (!transcript.some((entry) => entry.role === 'user')) return null
     if (transcript[transcript.length - 1]?.role !== 'assistant') return null
     const header = session.requestHeader?.()?.config
@@ -477,12 +498,17 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     start(session.id, session, events, event.seq)
   })
 
-  /** The pending prediction for a session's latest turn, starting it only when `generate` is set. */
-  const lookup = (sessionId: string, generate: boolean): Pending | undefined => {
+  /** A browser is looking at this session: keep early starts on for it. */
+  const watch = (sessionId: string) => {
     // Re-insert so the map stays oldest-first, then drop the overflow.
     watched.delete(sessionId)
     watched.set(sessionId, Date.now())
     while (watched.size > CACHE_LIMIT) watched.delete(watched.keys().next().value as string)
+  }
+
+  /** The pending prediction for a session's latest turn, starting it only when `generate` is set. */
+  const lookup = (sessionId: string, generate: boolean): Pending | undefined => {
+    watch(sessionId)
     const session = ctx.sessions.get(sessionId)
     if (!session) return undefined
     const events: SessionEvent[] = session.snapshotEvents()
@@ -495,7 +521,7 @@ export function apply(ctx: any, rawConfig: RawConfig) {
   }
 
   /**
-   * The user moved on (typed something else, or pressed Esc): stop the call
+   * The user pressed Esc: stop the call
    * still running for the current turn, or forget its finished suggestion so
    * other tabs and a reopened session don't show it either. A newer turn's
    * prediction is left alone.
@@ -621,6 +647,25 @@ export function apply(ctx: any, rawConfig: RawConfig) {
         return jsonResponse(200, { ok: true })
       },
     }), 'next-prompt: dismiss route')
+    // A turn just started in the browser: the watch must outlive it, however
+    // long the user idled before sending, so its final reply starts early.
+    cctx.effect(() => cctx.connection.fetch.register({
+      path: WATCH_ROUTE,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: async (request: Request) => {
+        let body: any
+        try {
+          body = await request.json()
+        } catch {
+          return jsonResponse(400, { error: 'expected a JSON body' })
+        }
+        const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+        if (!sessionId) return jsonResponse(400, { error: 'sessionId is required' })
+        watch(sessionId)
+        return jsonResponse(200, { ok: true })
+      },
+    }), 'next-prompt: watch route')
     cctx.effect(() => cctx.connection.fetch.register({
       path: MODELS_ROUTE,
       methods: ['GET'],
@@ -654,7 +699,8 @@ export function apply(ctx: any, rawConfig: RawConfig) {
             { provider, model },
             frameTranscript(BENCH_TRANSCRIPTS[body?.lang === 'en' ? 'en' : 'zh'], current.maxContextChars),
             undefined,
-            AbortSignal.timeout(current.timeoutMs),
+            // runModel adds the timeout; this stops the call if the page goes away.
+            request.signal,
             () => {},
           )
           return jsonResponse(200, { suggestion, timing, recent: timings })
