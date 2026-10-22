@@ -56,14 +56,16 @@ type Lang = "zh" | "en";
 
 const zh = {
   "ghost.accept": "{key} 接受",
+  "ghost.keys": "{key} 接受 · {word} 逐词接受 · Esc 关闭",
   "card.enabled": "输入预测",
-  "card.enabled.hint": "每轮对话结束后，猜你接下来想说什么，以灰色文字显示在输入框里。",
   "card.preview.suggestion": "好的，再加上单元测试",
-  "card.preview.caption": "按 {key} 接受，{word} 逐词接受，Esc 关闭；打的字和预测开头一致时会继续提示",
+  "card.preview.accept": "接受",
+  "card.preview.word": "逐词",
+  "card.preview.dismiss": "关闭",
   "card.acceptKey": "接受键",
-  "card.acceptKey.hint": "按哪个键接受整条预测。也可以直接点击输入框里的提示标签。",
+  "card.acceptKey.hint": "接受整条预测；也可以直接点提示标签。",
   "card.model": "预测模型",
-  "card.model.hint": "每次预测会额外调用一次模型。不带推理的 Flash 类小模型响应最快、也最省钱。",
+  "card.model.hint": "每次预测额外调用一次模型，不带推理的小模型最快也最省。",
   "card.model.follow": "跟随当前会话",
   "card.model.follow.hint": "使用会话正在用的模型",
   "card.model.search": "搜索模型",
@@ -77,7 +79,7 @@ const zh = {
   "card.source.dsh.hint": "用 dsh 里已配置好的模型。",
   "card.source.own.hint": "用你自己的 API Key 直接调用厂商接口，不经过 dsh。",
   "card.own": "提供商",
-  "card.own.hint": "添加提供商并填好 API Key，它的模型就会出现在上面的列表里。",
+  "card.own.hint": "填好 API Key 后，它的模型会出现在下方的预测模型里。",
   "card.own.add": "添加",
   "card.own.addTitle": "添加提供商",
   "card.own.provider": "提供商",
@@ -102,6 +104,7 @@ const zh = {
   "card.own.up": "上移",
   "card.own.down": "下移",
   "card.own.remove": "删除",
+  "card.own.removeConfirm": "确认删除？Key 也会删除",
   "card.own.incomplete": "未生效：需要 Key 和模型",
   "card.own.failed": "{model}：{error}（{time}后重试）",
   "card.own.tag": "自定义",
@@ -113,7 +116,7 @@ const zh = {
   "preset.deepseek": "按量计费，便宜、响应快",
   "card.saveFailed": "保存失败，已恢复为服务器上的值",
   "card.bench": "模型测速",
-  "card.bench.hint": "选几个要测的模型，用一段固定的对话各实际调用一次，看谁出预测最快、预测得怎么样。每个模型会产生一次调用费用。",
+  "card.bench.hint": "用同一段对话实测各模型的速度和预测效果，每个模型计一次调用。",
   "card.bench.start": "开始测速（{count}）",
   "card.bench.pick": "选择模型（{count}）",
   "card.bench.untested": "未测",
@@ -130,12 +133,16 @@ const zh = {
   "card.recent": "最近一次预测用了 {ms}（{model}）",
   "card.recent.think": "，其中模型思考了约 {chars} 字——思考型模型会明显变慢",
   "card.recent.none": "还没有实际预测记录，聊一轮后这里会显示耗时。",
+  "card.diag": "诊断",
+  "card.diag.hint": "测速、Token 用量",
+  "card.diag.summary": "{calls} 次调用 · 输入 {input} · 输出 {output}",
   "card.usage": "Token 用量",
-  "card.usage.hint": "自 dsh 启动以来，预测和测速调用模型消耗的 token，重启后清零。输入不含缓存命中的部分。",
+  "card.usage.hint": "预测和测速消耗的 token，dsh 重启后清零。",
   "card.usage.refresh": "刷新",
   "card.usage.model": "模型",
   "card.usage.calls": "调用",
   "card.usage.input": "输入",
+  "card.usage.input.hint": "不含缓存命中的部分",
   "card.usage.cached": "缓存命中",
   "card.usage.output": "输出",
   "card.usage.total": "合计",
@@ -148,14 +155,16 @@ const zh = {
 type TKey = keyof typeof zh;
 const en: Record<TKey, string> = {
   "ghost.accept": "{key} accept",
+  "ghost.keys": "{key} accepts · {word} accepts a word · Esc dismisses",
   "card.enabled": "Prompt suggestions",
-  "card.enabled.hint": "After each turn, guess what you will type next and show it as grey text in the composer.",
   "card.preview.suggestion": "Sounds good, add unit tests too",
-  "card.preview.caption": "{key} accepts, {word} accepts a word, Esc dismisses; typing the suggestion's start keeps it showing",
+  "card.preview.accept": "accept",
+  "card.preview.word": "word",
+  "card.preview.dismiss": "dismiss",
   "card.acceptKey": "Accept key",
-  "card.acceptKey.hint": "Which key accepts the whole suggestion. You can also click the hint chip in the composer.",
+  "card.acceptKey.hint": "Accepts the whole suggestion; clicking the hint chip works too.",
   "card.model": "Suggestion model",
-  "card.model.hint": "Each suggestion is one extra model call. A small non-reasoning Flash model is fastest and cheapest.",
+  "card.model.hint": "One extra call per suggestion; small non-reasoning models are fastest and cheapest.",
   "card.model.follow": "Follow the current session",
   "card.model.follow.hint": "Use the model the session is running",
   "card.model.search": "Search models",
@@ -169,7 +178,7 @@ const en: Record<TKey, string> = {
   "card.source.dsh.hint": "Use a model already set up in dsh.",
   "card.source.own.hint": "Call a provider directly with your own API key, outside dsh.",
   "card.own": "Providers",
-  "card.own.hint": "Add a provider with its API key and its models show up in the list above.",
+  "card.own.hint": "Once its API key is in, a provider's models show up under Suggestion model below.",
   "card.own.add": "Add",
   "card.own.addTitle": "Add a provider",
   "card.own.provider": "Provider",
@@ -194,6 +203,7 @@ const en: Record<TKey, string> = {
   "card.own.up": "Move up",
   "card.own.down": "Move down",
   "card.own.remove": "Remove",
+  "card.own.removeConfirm": "Remove, key included?",
   "card.own.incomplete": "Not active: needs a key and a model",
   "card.own.failed": "{model}: {error} (retry in {time})",
   "card.own.tag": "custom",
@@ -205,7 +215,7 @@ const en: Record<TKey, string> = {
   "preset.deepseek": "Pay as you go; cheap and fast",
   "card.saveFailed": "Save failed; reverted to the stored value",
   "card.bench": "Speed test",
-  "card.bench.hint": "Pick the models to test; each is called once on a fixed conversation to see which predicts fastest, and how well. Each model costs one call.",
+  "card.bench.hint": "Runs each model once on the same conversation to compare speed and output; one call each.",
   "card.bench.start": "Run ({count})",
   "card.bench.pick": "Models ({count})",
   "card.bench.untested": "Not run yet",
@@ -222,12 +232,16 @@ const en: Record<TKey, string> = {
   "card.recent": "The last prediction took {ms} ({model})",
   "card.recent.think": "; the model thought for about {chars} characters first — reasoning models are noticeably slower",
   "card.recent.none": "No real predictions yet; the timing shows here after a turn.",
+  "card.diag": "Diagnostics",
+  "card.diag.hint": "Speed test, token usage",
+  "card.diag.summary": "{calls} calls · {input} in · {output} out",
   "card.usage": "Token usage",
-  "card.usage.hint": "Tokens spent by prediction and speed-test calls since dsh started; reset on restart. Input excludes cache hits.",
+  "card.usage.hint": "Tokens spent by suggestions and speed tests; reset when dsh restarts.",
   "card.usage.refresh": "Refresh",
   "card.usage.model": "Model",
   "card.usage.calls": "Calls",
   "card.usage.input": "Input",
+  "card.usage.input.hint": "Excludes cache hits",
   "card.usage.cached": "Cached",
   "card.usage.output": "Output",
   "card.usage.total": "Total",
@@ -393,7 +407,8 @@ const CSS = `
 .np-title{font-size:14px;line-height:20px}
 .np-desc{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .np-error{margin-top:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary,#d33)}
-.np-dim{opacity:.5;pointer-events:none}
+.np-dim{opacity:.5}
+.np-card>.np-error{margin:0 0 12px}
 
 .np-preview{margin:0 0 16px;padding:12px 14px;border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-1,transparent);transition:opacity .15s}
 .np-preview-line{display:flex;align-items:center;gap:2px;font-size:14px;line-height:22px;min-width:0}
@@ -401,7 +416,8 @@ const CSS = `
 @keyframes np-blink{50%{opacity:0}}
 .np-ghost{color:var(--dsw-alias-label-caption);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .np-key{flex:none;margin-left:8px;font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;border:.5px solid var(--dsw-alias-border-l4);color:var(--dsw-alias-label-caption)}
-.np-preview-caption{margin-top:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
+.np-preview-caption{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-top:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
+.np-preview-caption .np-key{margin:0 4px 0 0}
 
 .np-picker{position:relative;flex:none}
 .np-trigger{display:inline-flex;align-items:center;gap:6px;max-width:260px;height:32px;padding:0 10px 0 12px;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary);background:transparent;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm,8px);cursor:pointer}
@@ -475,6 +491,12 @@ const CSS = `
 .np-input:focus{border-color:var(--dsw-alias-state-business-primary,#3e58d6)}
 .np-input:disabled{opacity:.5}
 .np-own-item .np-error{margin-top:0}
+.np-field[data-invalid] .np-input,.np-field[data-invalid] .np-trigger{border-color:var(--dsw-alias-state-error-primary,#d33)}
+.np-remove.np-confirm{width:auto;padding:0 8px;font-size:12px;color:var(--dsw-alias-state-error-primary,#d33)}
+.np-diag-head{width:100%;font:inherit;text-align:left;color:inherit;background:transparent;border:0;border-bottom:.5px solid var(--dsw-alias-border-l2);cursor:pointer}
+.np-diag-head .np-own-chevron{margin-right:6px}
+.np-diag:not([data-open]) .np-own-chevron{transform:rotate(-90deg)}
+.np-diag-title{display:flex;align-items:center}
 .np-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.4)}
 .np-modal{width:min(460px,100%);box-sizing:border-box;display:flex;flex-direction:column;gap:12px;padding:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2,#fff);border:.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg,12px);box-shadow:var(--dsw-elevation-prominent,0 8px 24px rgba(0,0,0,.16))}
 .np-modal-title{font-size:15px;line-height:22px;font-weight:500;margin-bottom:4px}
@@ -715,6 +737,7 @@ function GhostSuggestion({ sessionId, useSession, useInput, inputActions, locale
                   // Keep focus in the editor; a click or tap accepts (touch screens have no → key).
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => acceptRef.current(false)}
+                  title={t("ghost.keys", { key: KEY_LABEL[acceptKey], word: WORD_KEY_LABEL })}
                 >
                   {t("ghost.accept", { key: KEY_LABEL[acceptKey] })}
                 </kbd>
@@ -793,7 +816,9 @@ function Preview({ t, dim, acceptKey }: { t: Translate; dim: boolean; acceptKey:
         <span className="np-key">{KEY_LABEL[acceptKey]}</span>
       </div>
       <div className="np-preview-caption">
-        {t("card.preview.caption", { key: KEY_LABEL[acceptKey], word: WORD_KEY_LABEL })}
+        <span><span className="np-key">{KEY_LABEL[acceptKey]}</span>{t("card.preview.accept")}</span>
+        <span><span className="np-key">{WORD_KEY_LABEL}</span>{t("card.preview.word")}</span>
+        <span><span className="np-key">Esc</span>{t("card.preview.dismiss")}</span>
       </div>
     </div>
   );
@@ -823,13 +848,9 @@ type UsageReport = { since: number; models: UsageRow[] };
 const formatTokens = (n: number) =>
   n < 1000 ? String(n) : n < 1e6 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
 
-/** Calls and tokens per model, most input first, with a total row. */
-function UsageTable({ t, usage, models }: { t: Translate; usage: UsageReport; models: ModelRow[] | null }) {
-  const rows = [...usage.models].sort(
-    (a, b) => b.inputTokens + b.cacheReadTokens - (a.inputTokens + a.cacheReadTokens),
-  );
-  if (!rows.length) return <div className="np-usage-note">{t("card.usage.empty")}</div>;
-  const total = rows.reduce(
+/** Sums across models; cache writes are billed as input, so they count as input. */
+const usageTotal = (rows: UsageRow[]) =>
+  rows.reduce(
     (sum, row) => ({
       calls: sum.calls + row.calls,
       reported: sum.reported + row.reported,
@@ -840,6 +861,14 @@ function UsageTable({ t, usage, models }: { t: Translate; usage: UsageReport; mo
     }),
     { calls: 0, reported: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, reasoningTokens: 0 },
   );
+
+/** Calls and tokens per model, most input first, with a total row. */
+function UsageTable({ t, usage, models }: { t: Translate; usage: UsageReport; models: ModelRow[] | null }) {
+  const rows = [...usage.models].sort(
+    (a, b) => b.inputTokens + b.cacheReadTokens - (a.inputTokens + a.cacheReadTokens),
+  );
+  if (!rows.length) return <div className="np-usage-note">{t("card.usage.empty")}</div>;
+  const total = usageTotal(rows);
   const num = (n: number, title?: string) => (
     <span className="np-usage-num" title={title ?? n.toLocaleString()}>{formatTokens(n)}</span>
   );
@@ -850,7 +879,7 @@ function UsageTable({ t, usage, models }: { t: Translate; usage: UsageReport; mo
       <div className="np-usage-row np-usage-head">
         <span className="np-usage-name">{t("card.usage.model")}</span>
         <span className="np-usage-num">{t("card.usage.calls")}</span>
-        <span className="np-usage-num">{t("card.usage.input")}</span>
+        <span className="np-usage-num" title={t("card.usage.input.hint")}>{t("card.usage.input")}</span>
         <span className="np-usage-num">{t("card.usage.cached")}</span>
         <span className="np-usage-num">{t("card.usage.output")}</span>
       </div>
@@ -900,13 +929,13 @@ function saveBench(results: BenchResults) {
     localStorage.setItem(BENCH_STORAGE, JSON.stringify(results));
   } catch {}
 }
-/** Which models the speed test runs on, as {@link routeKey}s. */
-function loadBenchPick(): string[] {
+/** Which models the speed test runs on, as {@link routeKey}s; null until the user picks any. */
+function loadBenchPick(): string[] | null {
   try {
-    const keys = JSON.parse(localStorage.getItem(BENCH_PICK_STORAGE) || "[]");
-    return Array.isArray(keys) ? keys : [];
+    const keys = JSON.parse(localStorage.getItem(BENCH_PICK_STORAGE) || "null");
+    return Array.isArray(keys) ? keys : null;
   } catch {
-    return [];
+    return null;
   }
 }
 function saveBenchPick(keys: string[]) {
@@ -1247,9 +1276,9 @@ function TextField({ value, placeholder, secret, disabled, onCommit }: {
 }
 
 /** A label on the left, its control on the right. */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, invalid, children }: { label: string; invalid?: boolean; children: React.ReactNode }) {
   return (
-    <div className="np-field">
+    <div className="np-field" data-invalid={invalid ? "" : undefined}>
       <span className="np-field-label">{label}</span>
       <div className="np-field-control">{children}</div>
     </div>
@@ -1303,7 +1332,7 @@ function Dropdown({ t, label, placeholder, options, isChecked, onPick, multi, di
 }
 
 /** One provider's settings, shared by the add dialog and an expanded row. */
-function ProviderFields({ t, provider: p, preset, apiKey, keyPlaceholder, disabled, onPatch, onKey }: {
+function ProviderFields({ t, provider: p, preset, apiKey, keyPlaceholder, disabled, check, onPatch, onKey }: {
   t: Translate;
   provider: OwnProvider;
   preset?: Preset;
@@ -1311,6 +1340,8 @@ function ProviderFields({ t, provider: p, preset, apiKey, keyPlaceholder, disabl
   apiKey: string;
   keyPlaceholder: string;
   disabled: boolean;
+  /** Outline the required fields still empty; only the dialog knows the key, so only it asks. */
+  check?: boolean;
   onPatch: (patch: Partial<OwnProvider>) => void;
   onKey: (key: string) => void;
 }) {
@@ -1323,18 +1354,18 @@ function ProviderFields({ t, provider: p, preset, apiKey, keyPlaceholder, disabl
             <TextField value={p.name} placeholder={t("card.own.custom")} disabled={disabled}
               onCommit={(name) => onPatch({ name })} />
           </Field>
-          <Field label={t("card.own.baseURL")}>
+          <Field label={t("card.own.baseURL")} invalid={check && !p.baseURL.trim()}>
             <TextField value={p.baseURL} placeholder="https://example.com/v1" disabled={disabled}
               onCommit={(baseURL) => onPatch({ baseURL: baseURL.trim() })} />
           </Field>
         </>
       )}
-      <Field label={t("card.own.key")}>
+      <Field label={t("card.own.key")} invalid={check && !apiKey}>
         <TextField value={apiKey} placeholder={keyPlaceholder} secret disabled={disabled}
           onCommit={(key) => key.trim() && onKey(key.trim())} />
         {preset ? <a href={preset.keyUrl} target="_blank" rel="noreferrer">{t("card.own.getKey")}</a> : null}
       </Field>
-      <Field label={t("card.own.models")}>
+      <Field label={t("card.own.models")} invalid={check && !p.models.some((m) => m.trim())}>
         {preset ? (
           <Dropdown
             t={t}
@@ -1353,7 +1384,7 @@ function ProviderFields({ t, provider: p, preset, apiKey, keyPlaceholder, disabl
         )}
       </Field>
       {preset ? null : (
-        <Field label={t("card.own.extra")}>
+        <Field label={t("card.own.extra")} invalid={!validExtra(p.extraBody)}>
           <TextField value={p.extraBody} placeholder='{"enable_thinking": false}' disabled={disabled}
             onCommit={(extraBody) => onPatch({ extraBody })} />
         </Field>
@@ -1384,6 +1415,12 @@ function AddProviderDialog({ t, presets, free, onCancel, onAdd }: {
   const [tried, setTried] = React.useState(false);
   const preset = draft.preset === "custom" ? undefined : presets[draft.preset];
   const ready = !!key && ownReady(draft, [draft.id]) && validExtra(draft.extraBody);
+  const modalRef = React.useRef<HTMLDivElement>(null);
+
+  // Straight into the first box: the key for a preset, the name for a custom one.
+  React.useEffect(() => {
+    modalRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+  }, [draft.preset]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onCancel();
@@ -1398,7 +1435,7 @@ function AddProviderDialog({ t, presets, free, onCancel, onAdd }: {
 
   return createPortal(
     <div className="np-modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onCancel()}>
-      <div className="np-modal" role="dialog" aria-modal="true" aria-label={t("card.own.addTitle")}>
+      <div className="np-modal" ref={modalRef} role="dialog" aria-modal="true" aria-label={t("card.own.addTitle")}>
         <div className="np-modal-title">{t("card.own.addTitle")}</div>
         <Field label={t("card.own.provider")}>
           <Dropdown
@@ -1417,6 +1454,7 @@ function AddProviderDialog({ t, presets, free, onCancel, onAdd }: {
           apiKey={key}
           keyPlaceholder={t("card.own.keyPlaceholder")}
           disabled={false}
+          check={tried}
           onPatch={(patch) => setDraft((d) => ({ ...d, ...patch }))}
           onKey={setKey}
         />
@@ -1439,7 +1477,7 @@ function AddProviderDialog({ t, presets, free, onCancel, onAdd }: {
 }
 
 /** The custom providers: one collapsed row each, expanded to edit; "+ Add" opens a dialog. */
-function OwnProviders({ t, presets, providers, keyed, failures, disabled, onChange, onKey, onAdd }: {
+function OwnProviders({ t, presets, providers, keyed, failures, disabled, ordered, onChange, onKey, onAdd }: {
   t: Translate;
   presets: Record<PresetId, Preset> | null;
   providers: OwnProvider[];
@@ -1447,12 +1485,16 @@ function OwnProviders({ t, presets, providers, keyed, failures, disabled, onChan
   keyed: string[];
   failures: Failure[];
   disabled: boolean;
+  /** Whether the order matters, i.e. "automatic" tries them top to bottom. */
+  ordered: boolean;
   onChange: (next: OwnProvider[]) => void;
   onKey: (id: string, key: string) => void;
   onAdd: (provider: OwnProvider, key: string) => void;
 }) {
   const [adding, setAdding] = React.useState(false);
   const [expanded, setExpanded] = React.useState<string | null>(null);
+  // Removing drops the write-only key too, so it takes a second click.
+  const [removing, setRemoving] = React.useState<string | null>(null);
   const update = (index: number, patch: Partial<OwnProvider>) =>
     onChange(providers.map((p, i) => (i === index ? { ...p, ...patch } : p)));
   const move = (index: number, by: number) => {
@@ -1473,7 +1515,12 @@ function OwnProviders({ t, presets, providers, keyed, failures, disabled, onChan
           <div className="np-title">{t("card.own")}</div>
           <div className="np-desc">{t("card.own.hint")}</div>
         </div>
-        <button type="button" className="np-btn np-btn-tall" disabled={disabled || !presets} onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          className={`np-btn np-btn-tall${providers.length ? "" : " np-btn-primary"}`}
+          disabled={disabled || !presets}
+          onClick={() => setAdding(true)}
+        >
           + {t("card.own.add")}
         </button>
       </div>
@@ -1507,7 +1554,7 @@ function OwnProviders({ t, presets, providers, keyed, failures, disabled, onChan
                         : p.models.join(", ")}
                   </span>
                   <span className="np-own-tools" onClick={(e) => e.stopPropagation()}>
-                    {providers.length > 1 ? (
+                    {ordered && providers.length > 1 && removing !== p.id ? (
                       <>
                         <button type="button" className="np-remove" title={t("card.own.up")} aria-label={t("card.own.up")}
                           disabled={disabled || index === 0} onClick={() => move(index, -1)}>↑</button>
@@ -1515,8 +1562,19 @@ function OwnProviders({ t, presets, providers, keyed, failures, disabled, onChan
                           disabled={disabled || index === providers.length - 1} onClick={() => move(index, 1)}>↓</button>
                       </>
                     ) : null}
-                    <button type="button" className="np-remove" title={t("card.own.remove")} aria-label={t("card.own.remove")}
-                      disabled={disabled} onClick={() => onChange(providers.filter((_, i) => i !== index))}>×</button>
+                    {removing === p.id ? (
+                      <button type="button" className="np-remove np-confirm" autoFocus disabled={disabled}
+                        onBlur={() => setRemoving(null)}
+                        onClick={() => {
+                          setRemoving(null);
+                          onChange(providers.filter((_, i) => i !== index));
+                        }}>
+                        {t("card.own.removeConfirm")}
+                      </button>
+                    ) : (
+                      <button type="button" className="np-remove" title={t("card.own.remove")} aria-label={t("card.own.remove")}
+                        disabled={disabled} onClick={() => setRemoving(p.id)}>×</button>
+                    )}
                   </span>
                 </div>
                 {open ? (
@@ -1568,11 +1626,11 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
   );
   const [models, setModels] = React.useState<ModelRow[] | null>(null);
   const [modelsError, setModelsError] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const [diagOpen, setDiagOpen] = React.useState(false);
   const [bench, setBench] = React.useState<BenchResults>(loadBench);
   const [benchProgress, setBenchProgress] = React.useState<{ done: number; total: number } | null>(null);
-  const [benchPick, setBenchPick] = React.useState<string[]>(loadBenchPick);
+  const [storedPick, setBenchPick] = React.useState<string[] | null>(loadBenchPick);
   const [recent, setRecent] = React.useState<Timing | null | undefined>(undefined);
   const [usage, setUsage] = React.useState<UsageReport | null>(null);
   const [presets, setPresets] = React.useState<Record<PresetId, Preset> | null>(null);
@@ -1653,10 +1711,10 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
   const inUse = source === "own" ? ownSelected : selected;
   const dshModels = models && models.filter((row) => !row.provider.startsWith(OWN_PREFIX));
   const ownModels = models && models.filter((row) => row.provider.startsWith(OWN_PREFIX));
-  const disabled = snapshot.status !== "ready" || snapshot.writable === false || saving;
+  // Not disabled while a save is in flight: that would grey the whole card on every click.
+  const disabled = snapshot.status !== "ready" || snapshot.writable === false;
 
   const write = async (ops: Array<[string, unknown]>) => {
-    setSaving(true);
     setFailed(false);
     try {
       let ok = true;
@@ -1666,8 +1724,6 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
       if (!ok) setFailed(true);
     } catch {
       setFailed(true);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -1692,14 +1748,11 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
 
   /** Path-addressed writes, so a secret the form never sees is set or dropped without restating the others. */
   const writePaths = async (ops: Array<{ op: "set" | "unset"; path: string[]; value?: unknown }>) => {
-    setSaving(true);
     setFailed(false);
     try {
       if (!(await form.mutate(ops))) setFailed(true);
     } catch {
       setFailed(true);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -1737,6 +1790,9 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
     setBenchPick(keys);
     saveBenchPick(keys);
   };
+  // Until the user picks, the model in use is ticked, so the first run is one click.
+  const benchPick =
+    storedPick ?? ((models ?? []).some((row) => routeKey(row.provider, row.model) === inUse) ? [inUse] : []);
   const pickedRows = (models ?? []).filter((row) => benchPick.includes(routeKey(row.provider, row.model)));
 
   // Two at a time: fast enough, and gentle on per-provider rate limits.
@@ -1787,14 +1843,61 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
     .sort((a, b) => rank(a.result) - rank(b.result));
   const fastestKey = ranked[0]?.result?.ms !== undefined ? ranked[0].key : undefined;
 
+  const dim = enabled ? "" : " np-dim";
+  const totals = usage ? usageTotal(usage.models) : null;
+
+  const modelRow = (
+    <div className={`np-row${dim}`}>
+      <div className="np-text">
+        <div className="np-title">{t("card.model")}</div>
+        <div className="np-desc">{t("card.model.hint")}</div>
+        {recent === null ? <div className="np-recent">{t("card.recent.none")}</div> : null}
+        {recent ? (
+          <div className="np-recent">
+            {t("card.recent", {
+              ms: formatMs(recent.totalMs),
+              model: `${recent.route.provider}/${recent.route.model}`,
+            })}
+            {recent.reasoningChars > 0 ? t("card.recent.think", { chars: String(recent.reasoningChars) }) : null}
+          </div>
+        ) : null}
+        {modelsError ? <div className="np-error">{t("card.model.failed", { error: modelsError })}</div> : null}
+      </div>
+      {source === "own" ? (
+        <ModelPicker
+          t={t}
+          models={ownModels}
+          selected={ownSelected}
+          provider={ownProvider}
+          model={ownModel}
+          disabled={disabled || !enabled}
+          onSelect={onOwnModel}
+          bench={bench}
+          follow={{ name: t("card.own.auto"), hint: t("card.own.auto.hint") }}
+        />
+      ) : (
+        <ModelPicker
+          t={t}
+          models={dshModels}
+          selected={selected}
+          provider={provider}
+          model={model}
+          disabled={disabled || !enabled}
+          onSelect={onModel}
+          bench={bench}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="np-card">
-      <Preview t={t} dim={!enabled} acceptKey={acceptKey} />
+      {/* Up top, where the click that failed was most likely made. */}
+      {failed ? <div className="np-error" role="alert">{t("card.saveFailed")}</div> : null}
 
-      <div className="np-row">
+      <div className="np-row" style={{ borderBottom: "none", paddingTop: 0 }}>
         <div className="np-text">
           <div className="np-title">{t("card.enabled")}</div>
-          <div className="np-desc">{t("card.enabled.hint")}</div>
         </div>
         <Toggle
           checked={enabled}
@@ -1804,89 +1907,9 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
           onChange={(next) => void write([["enabled", next ? undefined : false]])}
         />
       </div>
+      <Preview t={t} dim={!enabled} acceptKey={acceptKey} />
 
-      <div className={`np-row${enabled ? "" : " np-dim"}`}>
-        <div className="np-text">
-          <div className="np-title">{t("card.source")}</div>
-          <div className="np-desc">{t(source === "own" ? "card.source.own.hint" : "card.source.dsh.hint")}</div>
-          {recent === null ? <div className="np-recent">{t("card.recent.none")}</div> : null}
-          {recent ? (
-            <div className="np-recent">
-              {t("card.recent", {
-                ms: formatMs(recent.totalMs),
-                model: `${recent.route.provider}/${recent.route.model}`,
-              })}
-              {recent.reasoningChars > 0 ? t("card.recent.think", { chars: String(recent.reasoningChars) }) : null}
-            </div>
-          ) : null}
-          {modelsError ? <div className="np-error">{t("card.model.failed", { error: modelsError })}</div> : null}
-        </div>
-        <div className="np-segment" role="radiogroup" aria-label={t("card.source")}>
-          {(["dsh", "own"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="radio"
-              className="np-btn"
-              aria-checked={source === key}
-              disabled={disabled || !enabled}
-              // The default is dsh, so choosing it again clears the override.
-              onClick={() => void write([["source", key === "dsh" ? undefined : key]])}
-            >
-              {t(`card.source.${key}`)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className={`np-row${enabled ? "" : " np-dim"}`}>
-        <div className="np-text">
-          <div className="np-title">{t("card.model")}</div>
-          <div className="np-desc">{t("card.model.hint")}</div>
-        </div>
-        {source === "own" ? (
-          <ModelPicker
-            t={t}
-            models={ownModels}
-            selected={ownSelected}
-            provider={ownProvider}
-            model={ownModel}
-            disabled={disabled || !enabled}
-            onSelect={onOwnModel}
-            bench={bench}
-            follow={{ name: t("card.own.auto"), hint: t("card.own.auto.hint") }}
-          />
-        ) : (
-          <ModelPicker
-            t={t}
-            models={dshModels}
-            selected={selected}
-            provider={provider}
-            model={model}
-            disabled={disabled || !enabled}
-            onSelect={onModel}
-            bench={bench}
-          />
-        )}
-      </div>
-
-      {source === "own" ? (
-        <div className={enabled ? undefined : "np-dim"}>
-          <OwnProviders
-            t={t}
-            presets={presets}
-            providers={ownProviders}
-            keyed={keyed}
-            failures={failures}
-            disabled={disabled || !enabled}
-            onChange={(next) => void onOwn(next)}
-            onKey={(id, key) => void onKey(id, key)}
-            onAdd={(added, key) => void onAddOwn(added, key)}
-          />
-        </div>
-      ) : null}
-
-      <div className={`np-row${enabled ? "" : " np-dim"}`}>
+      <div className={`np-row${dim}`}>
         <div className="np-text">
           <div className="np-title">{t("card.acceptKey")}</div>
           <div className="np-desc">{t("card.acceptKey.hint")}</div>
@@ -1909,94 +1932,169 @@ function SettingsCard({ form, locale }: { form: any; locale?: any }) {
         </div>
       </div>
 
-      <div className={enabled ? undefined : "np-dim"}>
-        <div className="np-row" style={ranked.length ? { borderBottom: "none" } : undefined}>
-          <div className="np-text">
-            <div className="np-title">{t("card.bench")}</div>
-            <div className="np-desc">{t("card.bench.hint")}</div>
-          </div>
-          <div className="np-bench-actions">
-            <BenchPicker
-              t={t}
-              models={models}
-              picked={benchPick}
-              disabled={!enabled || benchProgress !== null}
-              onChange={pickBench}
-              bench={bench}
-            />
-            <button
-              type="button"
-              className="np-btn np-btn-tall"
-              disabled={!enabled || !pickedRows.length || benchProgress !== null}
-              onClick={() => void runBench()}
-            >
-              {benchProgress
-                ? t("card.bench.running", { done: String(benchProgress.done), total: String(benchProgress.total) })
-                : t("card.bench.start", { count: String(pickedRows.length) })}
-            </button>
-          </div>
+      <div className={`np-row${dim}`}>
+        <div className="np-text">
+          <div className="np-title">{t("card.source")}</div>
+          <div className="np-desc">{t(source === "own" ? "card.source.own.hint" : "card.source.dsh.hint")}</div>
         </div>
-        {ranked.length ? (
-          <div className="np-bench">
-            {ranked.map(({ row, key, result }) => (
-              <div className="np-bench-row" key={key}>
-                <span
-                  className={`np-bench-ms ${
-                    !result ? "" : result.ms !== undefined ? speedClass(result.ms) : "np-slow"
-                  }`}
-                >
-                  {!result ? "—" : result.ms !== undefined ? formatMs(result.ms) : t("card.bench.failed")}
-                </span>
-                <span className="np-bench-name" title={`${row.providerName} / ${row.model}`}>{row.name}</span>
-                {key === fastestKey ? <span className="np-tag">{t("card.bench.fastest")}</span> : null}
-                <span className="np-bench-sample" title={result?.error ?? result?.suggestion ?? ""}>
-                  {!result
-                    ? t("card.bench.untested")
-                    : result.error ??
-                      (result.suggestion ? t("card.bench.sample", { text: result.suggestion }) : t("card.bench.empty"))}
-                </span>
-                {result?.ms !== undefined ? (
-                  key === inUse ? (
-                    <span className="np-tag">{t("card.bench.inUse")}</span>
-                  ) : (
-                    <button type="button" className="np-btn" disabled={disabled}
-                      onClick={() => (row.provider.startsWith(OWN_PREFIX) ? onOwnModel(key) : onModel(key))}>
-                      {t("card.bench.use")}
-                    </button>
-                  )
-                ) : null}
-                <button
-                  type="button"
-                  className="np-remove"
-                  aria-label={t("card.bench.remove")}
-                  title={t("card.bench.remove")}
-                  disabled={!enabled || benchProgress !== null}
-                  onClick={() => pickBench(benchPick.filter((k) => k !== key))}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div className="np-segment" role="radiogroup" aria-label={t("card.source")}>
+          {(["dsh", "own"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              className="np-btn"
+              aria-checked={source === key}
+              disabled={disabled || !enabled}
+              // The default is dsh, so choosing it again clears the override.
+              onClick={() => void write([["source", key === "dsh" ? undefined : key]])}
+            >
+              {t(`card.source.${key}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {usage ? (
-        <div>
-          <div className="np-row" style={{ borderBottom: "none" }}>
-            <div className="np-text">
-              <div className="np-title">{t("card.usage")}</div>
-              <div className="np-desc">{t("card.usage.hint")}</div>
-            </div>
-            <button type="button" className="np-btn np-btn-tall" onClick={refreshStats}>
-              {t("card.usage.refresh")}
-            </button>
-          </div>
-          <UsageTable t={t} usage={usage} models={models} />
+      {/* Custom models come from the providers, so those are set up first. */}
+      {source === "own" ? (
+        <div className={enabled ? undefined : "np-dim"}>
+          <OwnProviders
+            t={t}
+            presets={presets}
+            providers={ownProviders}
+            keyed={keyed}
+            failures={failures}
+            disabled={disabled || !enabled}
+            ordered={!ownProvider}
+            onChange={(next) => void onOwn(next)}
+            onKey={(id, key) => void onKey(id, key)}
+            onAdd={(added, key) => void onAddOwn(added, key)}
+          />
         </div>
       ) : null}
 
-      {failed ? <div className="np-error" role="alert">{t("card.saveFailed")}</div> : null}
+      {source === "own" && !ownProviders.length ? null : modelRow}
+
+      <div className={`np-diag${dim}`} data-open={diagOpen ? "" : undefined}>
+        <button
+          type="button"
+          className="np-row np-diag-head"
+          style={diagOpen ? { borderBottom: "none" } : undefined}
+          aria-expanded={diagOpen}
+          onClick={() => {
+            if (!diagOpen) refreshStats();
+            setDiagOpen(!diagOpen);
+          }}
+        >
+          <div className="np-text">
+            <div className="np-title np-diag-title">
+              <span className="np-chevron np-own-chevron">
+                <Icon name="IconChevronDownOutlineRegular" fallback="▾" />
+              </span>
+              {t("card.diag")}
+            </div>
+            <div className="np-desc">
+              {t("card.diag.hint")}
+              {totals?.reported
+                ? ` · ${t("card.diag.summary", {
+                    calls: String(totals.reported),
+                    input: formatTokens(totals.inputTokens + totals.cacheReadTokens),
+                    output: formatTokens(totals.outputTokens),
+                  })}`
+                : null}
+            </div>
+          </div>
+        </button>
+
+        {diagOpen ? (
+          <>
+            <div className="np-row" style={{ borderBottom: "none" }}>
+              <div className="np-text">
+                <div className="np-title">{t("card.bench")}</div>
+                <div className="np-desc">{t("card.bench.hint")}</div>
+              </div>
+              <div className="np-bench-actions">
+                <BenchPicker
+                  t={t}
+                  models={models}
+                  picked={benchPick}
+                  disabled={!enabled || benchProgress !== null}
+                  onChange={pickBench}
+                  bench={bench}
+                />
+                <button
+                  type="button"
+                  className="np-btn np-btn-tall np-btn-primary"
+                  disabled={!enabled || !pickedRows.length || benchProgress !== null}
+                  onClick={() => void runBench()}
+                >
+                  {benchProgress
+                    ? t("card.bench.running", { done: String(benchProgress.done), total: String(benchProgress.total) })
+                    : t("card.bench.start", { count: String(pickedRows.length) })}
+                </button>
+              </div>
+            </div>
+            {ranked.length ? (
+              <div className="np-bench">
+                {ranked.map(({ row, key, result }) => (
+                  <div className="np-bench-row" key={key}>
+                    <span
+                      className={`np-bench-ms ${
+                        !result ? "" : result.ms !== undefined ? speedClass(result.ms) : "np-slow"
+                      }`}
+                    >
+                      {!result ? "—" : result.ms !== undefined ? formatMs(result.ms) : t("card.bench.failed")}
+                    </span>
+                    <span className="np-bench-name" title={`${row.providerName} / ${row.model}`}>{row.name}</span>
+                    {key === fastestKey ? <span className="np-tag">{t("card.bench.fastest")}</span> : null}
+                    <span className="np-bench-sample" title={result?.error ?? result?.suggestion ?? ""}>
+                      {!result
+                        ? t("card.bench.untested")
+                        : result.error ??
+                          (result.suggestion ? t("card.bench.sample", { text: result.suggestion }) : t("card.bench.empty"))}
+                    </span>
+                    {result?.ms !== undefined ? (
+                      key === inUse ? (
+                        <span className="np-tag">{t("card.bench.inUse")}</span>
+                      ) : (
+                        <button type="button" className="np-btn" disabled={disabled || !enabled}
+                          onClick={() => (row.provider.startsWith(OWN_PREFIX) ? onOwnModel(key) : onModel(key))}>
+                          {t("card.bench.use")}
+                        </button>
+                      )
+                    ) : null}
+                    <button
+                      type="button"
+                      className="np-remove"
+                      aria-label={t("card.bench.remove")}
+                      title={t("card.bench.remove")}
+                      disabled={!enabled || benchProgress !== null}
+                      onClick={() => pickBench(benchPick.filter((k) => k !== key))}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {usage ? (
+              <>
+                <div className="np-row" style={{ borderBottom: "none" }}>
+                  <div className="np-text">
+                    <div className="np-title">{t("card.usage")}</div>
+                    <div className="np-desc">{t("card.usage.hint")}</div>
+                  </div>
+                  <button type="button" className="np-btn np-btn-tall" onClick={refreshStats}>
+                    {t("card.usage.refresh")}
+                  </button>
+                </div>
+                <UsageTable t={t} usage={usage} models={models} />
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
