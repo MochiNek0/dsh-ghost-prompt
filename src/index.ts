@@ -50,9 +50,116 @@ const BENCH_TRANSCRIPTS: Record<'zh' | 'en', Transcript[]> = {
 /** How long a browser's interest in a session keeps early starts on for it. */
 const WATCH_MS = 30 * 60_000
 
+/** How long a failed own model is skipped before it is tried again. */
+const COOLDOWN_MS = 10 * 60_000
+
+/** Provider id prefix that marks a route as one of the plugin's own models. */
+export const OWN_PREFIX = 'np:'
+
+export type PresetId = 'modelscope' | 'siliconflow' | 'agnes' | 'deepseek' | 'spark'
+
+type Preset = {
+  name: string
+  baseURL: string
+  /** Where to create an API key. */
+  keyUrl: string
+  /** Request fields every call carries, merged under each model's own. */
+  body?: Record<string, unknown>
+  /** Recommended models, best first; `body` turns thinking off where the route needs it. */
+  models: { id: string; body?: Record<string, unknown> }[]
+}
+
+/**
+ * Ready-made OpenAI-compatible routes: the user only pastes a key. Each one
+ * already carries the fields dsh would need a `compat` block for, chiefly
+ * whatever turns thinking off, since thinking is pure latency here.
+ */
+export const PRESETS: Record<PresetId, Preset> = {
+  modelscope: {
+    name: 'ModelScope',
+    baseURL: 'https://api-inference.modelscope.cn/v1',
+    keyUrl: 'https://modelscope.cn/my/myaccesstoken',
+    body: { enable_thinking: false },
+    models: [
+      { id: 'Qwen/Qwen3.5-35B-A3B' },
+      { id: 'Qwen/Qwen3.8-Flash-Next' },
+      { id: 'nex-agi/Nex-N2.5-mini' },
+      { id: 'Qwen/Qwen3.5-27B' },
+    ],
+  },
+  siliconflow: {
+    name: 'SiliconFlow',
+    baseURL: 'https://api.siliconflow.cn/v1',
+    keyUrl: 'https://cloud.siliconflow.cn/account/ak',
+    models: [
+      { id: 'Qwen/Qwen2.5-7B-Instruct' },
+      { id: 'deepseek-ai/DeepSeek-V4-Flash', body: { enable_thinking: false } },
+      { id: 'Qwen/Qwen3.6-35B-A3B', body: { enable_thinking: false } },
+    ],
+  },
+  agnes: {
+    name: 'Agnes AI',
+    baseURL: 'https://apihub.agnes-ai.com/v1',
+    keyUrl: 'https://wiki.agnes-ai.com/en/docs/agnes-30-flash',
+    models: [{ id: 'agnes-3.0-flash' }],
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    body: { thinking: { type: 'disabled' } },
+    models: [{ id: 'deepseek-flash' }],
+  },
+  spark: {
+    name: 'iFlytek Spark',
+    baseURL: 'https://spark-api-open.xf-yun.com/v1',
+    // Each Spark model has its own APIPassword, so only the free Lite is offered.
+    keyUrl: 'https://console.xfyun.cn/services/cbm',
+    models: [{ id: 'lite' }],
+  },
+}
+
+/** One provider the user added in the card; list order is the order models are tried in. */
+export type OwnProvider = {
+  /** Stable id: the preset id, or `custom-…` for a custom endpoint. */
+  id: string
+  preset: PresetId | 'custom'
+  /** Display name of a custom endpoint. */
+  name: string
+  /** Base URL of a custom endpoint; presets bring their own. */
+  baseURL: string
+  /** Model ids to use, tried in order. */
+  models: string[]
+  /** Extra request fields as a JSON object, merged over the preset's. */
+  extraBody: string
+}
+
+const ownProviderSchema = Schema.object({
+  id: Schema.string().required(),
+  preset: Schema.union([
+    Schema.const('modelscope'),
+    Schema.const('siliconflow'),
+    Schema.const('agnes'),
+    Schema.const('deepseek'),
+    Schema.const('spark'),
+    Schema.const('custom'),
+  ]).default('custom'),
+  name: Schema.string().default(''),
+  baseURL: Schema.string().default(''),
+  models: Schema.array(Schema.string()).default([]),
+  extraBody: Schema.string().default(''),
+})
+
 /** Every field, unmarked. Defaults here are what a fresh install runs with. */
 const configFields = () => ({
   enabled: Schema.boolean().default(true),
+  source: Schema.union([Schema.const('dsh'), Schema.const('own')]).default('dsh'),
+  ownProviders: Schema.array(ownProviderSchema).default([]),
+  ownProvider: Schema.string().default(''),
+  ownModel: Schema.string().default(''),
+  // Apart from the providers, so the browser (which never sees a secret) can
+  // rewrite the list without wiping the keys.
+  apiKeys: Schema.dict(Schema.string().role('secret')).default({}),
   provider: Schema.string().default(''),
   model: Schema.string().default(''),
   maxContextChars: Schema.natural().min(1000).max(100000).default(8000),
@@ -65,6 +172,11 @@ const configFields = () => ({
 const configDescriptions: Record<'en' | 'zh', Record<keyof ReturnType<typeof configFields>, string>> = {
   en: {
     enabled: 'After each turn, predict what you will type next and show it as grey text in the composer; press → to accept.',
+    source: 'Where predictions come from: dsh (dsh\'s models, see provider / model) or own (the plugin\'s own models, see ownProviders). Neither falls back to the other.',
+    apiKeys: 'API keys of the own models, keyed by provider id.',
+    ownProviders: 'The plugin\'s own OpenAI-compatible models (a preset or a custom endpoint plus an API key), used when source is own.',
+    ownProvider: 'Id of the own provider whose model predicts (set together with ownModel). Leave empty to try every own model in order.',
+    ownModel: 'Model id within ownProvider. Leave empty to try every own model in order.',
     provider: 'Model provider for predictions. Leave empty to follow the model the session is using.',
     model: 'Model id for predictions; set together with provider. Leave empty to follow the session.',
     maxContextChars: 'Most recent conversation sent to the prediction model, in characters, cut from the newest message back. Smaller is faster.',
@@ -74,7 +186,12 @@ const configDescriptions: Record<'en' | 'zh', Record<keyof ReturnType<typeof con
   },
   zh: {
     enabled: '每轮对话结束后预测你接下来想输入的内容，显示为输入框里的灰色提示，按 → 接受。',
-    provider: '预测用的模型提供方。留空则跟随当前会话正在使用的模型。',
+    source: '预测用哪边的模型：dsh（dsh 的模型，见 provider / model）或 own（插件自带模型，见 ownProviders）。两边互不兜底。',
+    apiKeys: '自带模型的 API Key，按 provider id 存放。',
+    ownProviders: '插件自带的 OpenAI 兼容模型（选预设或自定义地址，再填 API Key），source 为 own 时使用。',
+    ownProvider: '预测用哪个自带提供商的模型（需与 ownModel 一起设置）。留空则按顺序尝试所有自带模型。',
+    ownModel: 'ownProvider 下的模型 id。留空则按顺序尝试所有自带模型。',
+    provider:'预测用的模型提供方。留空则跟随当前会话正在使用的模型。',
     model: '预测用的模型 id，需与 provider 一起设置。留空则跟随当前会话。',
     maxContextChars: '送给预测模型的最近对话上限（字符数），从最新消息往前截取。越小越快。',
     maxOutputTokens: '预测调用的输出 token 上限（推理模型的思考也计入）。',
@@ -99,6 +216,11 @@ export const Config = Schema.object(
 
 export interface Config {
   enabled: boolean
+  source: 'dsh' | 'own'
+  ownProviders: OwnProvider[]
+  ownProvider: string
+  ownModel: string
+  apiKeys: Record<string, string>
   provider: string
   model: string
   maxContextChars: number
@@ -334,6 +456,144 @@ export function addUsage(totals: UsageTotals, usage: any): UsageTotals {
   return totals
 }
 
+/** One of the plugin's own models, ready to call. */
+export type OwnTarget = {
+  route: { provider: string; model: string }
+  /** Group label for menus: the preset's name, or the custom endpoint's. */
+  providerName: string
+  baseURL: string
+  apiKey: string
+  body: Record<string, unknown>
+  /** Changes whenever anything that could fix a failure changes. */
+  signature: string
+}
+
+/**
+ * The own models in the order they are tried: providers top to bottom, each
+ * one's models in its listed order. Providers without a key, a base URL or a
+ * model are skipped. Throws when `extraBody` is not a JSON object.
+ */
+export function ownTargets(
+  providers: readonly OwnProvider[] | undefined,
+  apiKeys: Readonly<Record<string, string>> | undefined,
+): OwnTarget[] {
+  const out: OwnTarget[] = []
+  for (const entry of providers ?? []) {
+    const preset = entry.preset === 'custom' ? undefined : PRESETS[entry.preset]
+    const baseURL = (preset?.baseURL ?? entry.baseURL ?? '').trim().replace(/\/+$/, '')
+    const apiKey = (apiKeys?.[entry.id] ?? '').trim()
+    if (!baseURL || !apiKey) continue
+    let extra: Record<string, unknown> = {}
+    if (entry.extraBody?.trim()) {
+      extra = JSON.parse(entry.extraBody)
+      if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
+        throw new Error(`${entry.name || entry.id}: extra request fields must be a JSON object`)
+      }
+    }
+    for (const model of entry.models ?? []) {
+      const id = model.trim()
+      if (!id) continue
+      const body = { ...preset?.body, ...preset?.models.find((m) => m.id === id)?.body, ...extra }
+      out.push({
+        route: { provider: `${OWN_PREFIX}${entry.id}`, model: id },
+        providerName: preset?.name ?? (entry.name.trim() || new URL(baseURL).host),
+        baseURL,
+        apiKey,
+        body,
+        signature: JSON.stringify([baseURL, apiKey, body]),
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * An OpenAI-format `usage` block in the shape dsh's `usage` chunks use:
+ * `inputTokens` leaves out the cache hits, which DeepSeek reports in its own field.
+ */
+export function usageFromOpenAI(usage: any) {
+  const prompt = Number(usage?.prompt_tokens) || 0
+  const cached = Number(usage?.prompt_tokens_details?.cached_tokens ?? usage?.prompt_cache_hit_tokens) || 0
+  return {
+    inputTokens: Math.max(0, prompt - cached),
+    cacheReadTokens: cached,
+    cacheWriteTokens: 0,
+    outputTokens: Number(usage?.completion_tokens) || 0,
+    reasoningTokens: Number(usage?.completion_tokens_details?.reasoning_tokens) || 0,
+  }
+}
+
+/** The dsh-style chunks carried by one streamed `chat.completion.chunk`. */
+export function chunksOf(json: any): any[] {
+  const out: any[] = []
+  const choice = json?.choices?.[0]
+  const delta = choice?.delta ?? {}
+  const reasoning = delta.reasoning_content ?? delta.reasoning
+  if (typeof reasoning === 'string' && reasoning) out.push({ type: 'reasoning-delta', text: reasoning })
+  if (typeof delta.content === 'string' && delta.content) out.push({ type: 'text-delta', index: 0, text: delta.content })
+  if (json?.usage) out.push({ type: 'usage', usage: usageFromOpenAI(json.usage) })
+  if (choice?.finish_reason) out.push({ type: 'finish', reason: { kind: 'stop' } })
+  return out
+}
+
+/** The readable part of an error body: `error.message`, `errors.message`, `message`, or the text itself. */
+export function errorMessage(status: number, text: string): string {
+  let message = text.trim()
+  try {
+    const body = JSON.parse(text)
+    message = String(body?.error?.message ?? body?.errors?.message ?? body?.message ?? body?.error ?? message)
+  } catch {}
+  return `HTTP ${status}${message ? `: ${message.slice(0, 300)}` : ''}`
+}
+
+/** Stream one prediction from an own model as dsh-style chunks. */
+export async function* streamChatCompletions(
+  target: OwnTarget,
+  system: string,
+  input: string,
+  maxTokens: number,
+  signal: AbortSignal,
+): AsyncGenerator<any> {
+  const response = await fetch(`${target.baseURL}/chat/completions`, {
+    method: 'POST',
+    signal,
+    headers: {
+      'content-type': 'application/json',
+      accept: 'text/event-stream',
+      authorization: `Bearer ${target.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: target.route.model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: input }],
+      stream: true,
+      stream_options: { include_usage: true },
+      max_tokens: maxTokens,
+      ...target.body,
+    }),
+  })
+  if (!response.ok || !response.body) throw new Error(errorMessage(response.status, await response.text().catch(() => '')))
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for await (const bytes of response.body as any as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(bytes, { stream: true })
+    for (let newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
+      const line = buffer.slice(0, newline).trim()
+      buffer = buffer.slice(newline + 1)
+      if (!line.startsWith('data:')) continue
+      const data = line.slice(5).trim()
+      if (data === '[DONE]') return
+      let json: any
+      try {
+        json = JSON.parse(data)
+      } catch {
+        continue
+      }
+      if (json?.error) throw new Error(errorMessage(response.status, data))
+      yield* chunksOf(json)
+    }
+  }
+}
+
 type Pending = {
   /** Seq of the final assistant reply this suggestion answers. */
   key: number
@@ -347,6 +607,8 @@ type Pending = {
 
 /** Sessions remembered at once; one entry each, so this bounds memory. */
 const CACHE_LIMIT = 200
+
+const routeKey = (route: { provider: string; model: string }) => `${route.provider}\u0000${route.model}`
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -369,12 +631,29 @@ export function apply(ctx: any, rawConfig: RawConfig) {
   const usageSince = Date.now()
   const usage = new Map<string, { provider: string; model: string } & UsageTotals>()
   const recordUsage = (route: { provider: string; model: string }, chunk: any) => {
-    const key = `${route.provider}\u0000${route.model}`
+    const key = routeKey(route)
     let entry = usage.get(key)
     if (!entry) usage.set(key, (entry = { provider: route.provider, model: route.model, ...emptyTotals() }))
     addUsage(entry, chunk)
   }
   const usageReport = () => ({ since: usageSince, models: [...usage.values()] })
+  /** Own models that failed lately, keyed like `usage`; the chain skips them while cooling down. */
+  const failures = new Map<string, { provider: string; model: string; error: string; at: number; signature: string }>()
+  const failureReport = () => {
+    const signatures = new Map(safeOwnTargets().map((t) => [routeKey(t.route), t.signature]))
+    return [...failures.entries()]
+      .filter(([key, f]) => signatures.get(key) === f.signature)
+      .map(([, { provider, model, error, at }]) => ({ provider, model, error, at, retryAt: at + COOLDOWN_MS }))
+  }
+  /** The own models, or none while a provider's extra fields are invalid JSON (the card says so). */
+  const safeOwnTargets = () => {
+    const current = config()
+    try {
+      return ownTargets(current.ownProviders, current.apiKeys)
+    } catch {
+      return []
+    }
+  }
   /** sessionId → last time a browser asked about it. */
   const watched = new Map<string, number>()
 
@@ -418,36 +697,45 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     const started = Date.now()
     const timing: Timing = { route, prepareMs: 0, firstTokenMs: null, firstTextMs: null, totalMs: 0, reasoningChars: 0, effort: null }
     const callSignal = AbortSignal.any([signal, AbortSignal.timeout(current.timeoutMs)])
-    // No `stop` / `temperature`: the pi-ai adapter rejects `stop`, some
-    // routes accept only temperature 1, and every option must be set here —
-    // dsh refuses a call whose options drift from what was prepared.
-    const call = await ctx.llm.prepareCall(
-      { ...route, maxTokens: current.maxOutputTokens },
-      callSignal,
-      (controls: any, model: any) => {
-        // Thinking is pure latency for a one-line guess: take the cheapest level offered.
-        const efforts: string[] = (model?.reasoning?.efforts ?? []).map((e: any) => e?.id)
-        const effort = FAST_EFFORTS.find((id) => efforts.includes(id)) ?? efforts[0]
-        return effort === undefined ? { ...controls } : { ...controls, reasoningEffort: effort }
-      },
-    )
-    timing.prepareMs = Date.now() - started
-    timing.effort = call.config?.reasoningEffort ?? null
-    const texts = new Map<number, string>()
-    const joined = () => [...texts.entries()].sort((a, b) => a[0] - b[0]).map(([, text]) => text).join('')
-    let finish: any
-    let usageChunk: any
     // Our own controller, so a complete first line can stop the call early.
     const stop = new AbortController()
     const streamSignal = AbortSignal.any([callSignal, stop.signal])
-    try {
-      for await (const chunk of call.stream({
+    let chunks: AsyncIterable<any>
+    if (route.provider.startsWith(OWN_PREFIX)) {
+      const target = ownTargets(current.ownProviders, current.apiKeys)
+        .find((t) => t.route.provider === route.provider && t.route.model === route.model)
+      if (!target) throw new Error(`${route.provider}/${route.model} is not configured`)
+      chunks = streamChatCompletions(target, SYSTEM_PROMPT, input, current.maxOutputTokens, streamSignal)
+    } else {
+      // No `stop` / `temperature`: the pi-ai adapter rejects `stop`, some
+      // routes accept only temperature 1, and every option must be set here —
+      // dsh refuses a call whose options drift from what was prepared.
+      const call = await ctx.llm.prepareCall(
+        { ...route, maxTokens: current.maxOutputTokens },
+        callSignal,
+        (controls: any, model: any) => {
+          // Thinking is pure latency for a one-line guess: take the cheapest level offered.
+          const efforts: string[] = (model?.reasoning?.efforts ?? []).map((e: any) => e?.id)
+          const effort = FAST_EFFORTS.find((id) => efforts.includes(id)) ?? efforts[0]
+          return effort === undefined ? { ...controls } : { ...controls, reasoningEffort: effort }
+        },
+      )
+      timing.effort = call.config?.reasoningEffort ?? null
+      chunks = call.stream({
         ...call.config,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
         ...(sessionId ? { sessionId } : {}),
         signal: streamSignal,
-      })) {
+      })
+    }
+    timing.prepareMs = Date.now() - started
+    const texts = new Map<number, string>()
+    const joined = () => [...texts.entries()].sort((a, b) => a[0] - b[0]).map(([, text]) => text).join('')
+    let finish: any
+    let usageChunk: any
+    try {
+      for await (const chunk of chunks) {
         callSignal.throwIfAborted()
         if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') timing.firstTokenMs ??= Date.now() - started
         if (chunk.type === 'reasoning-delta') timing.reasoningChars += String(chunk.text ?? '').length
@@ -486,6 +774,15 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     const transcript = transcriptOf(events, current.maxContextChars)
     if (!transcript.some((entry) => entry.role === 'user')) return null
     if (transcript[transcript.length - 1]?.role !== 'assistant') return null
+    const input = frameTranscript(transcript, current.maxContextChars)
+    if (current.source === 'own') {
+      let own = ownTargets(current.ownProviders, current.apiKeys)
+      if (current.ownProvider && current.ownModel) {
+        own = own.filter((t) => t.route.provider === `${OWN_PREFIX}${current.ownProvider}` && t.route.model === current.ownModel)
+      }
+      if (!own.length) throw new Error('no own model: add one with an API key and a model in the settings card')
+      return generateOwn(own, input, session.id, signal, onPartial)
+    }
     const header = session.requestHeader?.()?.config
     const route = current.provider && current.model
       ? { provider: current.provider, model: current.model }
@@ -493,10 +790,49 @@ export function apply(ctx: any, rawConfig: RawConfig) {
         ? { provider: header.provider, model: header.model }
         : undefined
     if (!route) throw new Error('no model: the session has no logged route and no prediction model is configured')
-    const { suggestion, timing } = await runModel(route, frameTranscript(transcript, current.maxContextChars), session.id, signal, onPartial)
+    const { suggestion, timing } = await runModel(route, input, session.id, signal, onPartial)
     recordTiming(timing)
     logger.debug?.(`session "${session.id}": ${JSON.stringify(timing)}`)
     return suggestion
+  }
+
+  /**
+   * Own models are tried in order. One that fails before showing any text
+   * (quota used up, bad key, timeout…) is skipped for {@link COOLDOWN_MS}, or
+   * until its settings change, and the next one is tried. When none is left
+   * the prediction fails: the user fixes it in the card, dsh's models are not
+   * used behind their back.
+   */
+  const generateOwn = async (
+    targets: OwnTarget[],
+    input: string,
+    sessionId: string,
+    signal: AbortSignal,
+    onPartial: (text: string) => void,
+  ): Promise<string | null> => {
+    for (const target of targets) {
+      const key = routeKey(target.route)
+      const failure = failures.get(key)
+      // Cooling down only helps when there is another model to try.
+      if (targets.length > 1 && failure && failure.signature === target.signature && Date.now() - failure.at < COOLDOWN_MS) continue
+      let shown = false
+      try {
+        const { suggestion, timing } = await runModel(target.route, input, sessionId, signal, (text) => {
+          shown ||= text !== ''
+          onPartial(text)
+        })
+        failures.delete(key)
+        recordTiming(timing)
+        logger.debug?.(`session "${sessionId}": ${JSON.stringify(timing)}`)
+        return suggestion
+      } catch (error: any) {
+        if (signal.aborted || shown) throw error
+        const message = String(error?.message ?? error)
+        failures.set(key, { ...target.route, error: message, at: Date.now(), signature: target.signature })
+        logger.warn(`own model ${target.route.provider}/${target.route.model} failed, trying the next one: ${message}`)
+      }
+    }
+    throw new Error('every own model failed recently; check the keys and quotas in the settings card')
   }
 
   /** Start (or keep) the prediction for one final reply. */
@@ -645,7 +981,14 @@ export function apply(ctx: any, rawConfig: RawConfig) {
     }))
     const order = new Map(providers.map((p, i) => [p.id, i]))
     out.sort((a, b) => (order.get(a.provider)! - order.get(b.provider)!))
-    return out
+    // Own models first, in the order they are tried, so the speed test can pick them too.
+    const own = safeOwnTargets().map((t) => ({
+      provider: t.route.provider,
+      providerName: t.providerName,
+      model: t.route.model,
+      name: t.route.model,
+    }))
+    return [...own, ...out]
   }
 
   // Routes wait in a child fiber: a missing `connection` in the top-level
@@ -724,7 +1067,9 @@ export function apply(ctx: any, rawConfig: RawConfig) {
       requestBody: 'buffered',
       fetch: async () => {
         try {
-          return jsonResponse(200, { version: PLUGIN_VERSION, models: await listModels() })
+          // `keyed` tells the card which providers have a key, since it never sees the keys themselves.
+          const keyed = Object.entries(config().apiKeys ?? {}).filter(([, key]) => key?.trim()).map(([id]) => id)
+          return jsonResponse(200, { version: PLUGIN_VERSION, models: await listModels(), presets: PRESETS, keyed })
         } catch (error: any) {
           return jsonResponse(500, { error: String(error?.message ?? error) })
         }
@@ -744,8 +1089,9 @@ export function apply(ctx: any, rawConfig: RawConfig) {
         const current = config()
         const provider = String(body?.provider ?? '')
         const model = String(body?.model ?? '')
-        // No route: the card only wants the recent real timings and the token usage.
-        if (!provider || !model) return jsonResponse(200, { recent: timings, usage: usageReport() })
+        const stats = () => ({ recent: timings, usage: usageReport(), failures: failureReport() })
+        // No route: the card only wants the recent real timings, the token usage and the failing own models.
+        if (!provider || !model) return jsonResponse(200, stats())
         try {
           const { suggestion, timing } = await runModel(
             { provider, model },
@@ -755,9 +1101,9 @@ export function apply(ctx: any, rawConfig: RawConfig) {
             request.signal,
             () => {},
           )
-          return jsonResponse(200, { suggestion, timing, recent: timings, usage: usageReport() })
+          return jsonResponse(200, { suggestion, timing, ...stats() })
         } catch (error: any) {
-          return jsonResponse(200, { error: String(error?.message ?? error), recent: timings, usage: usageReport() })
+          return jsonResponse(200, { error: String(error?.message ?? error), ...stats() })
         }
       },
     }), 'next-prompt: bench route')

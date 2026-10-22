@@ -11,6 +11,7 @@ Adds "predict what you'll type next" to DeepSeek Harness (dsh): after every turn
 - While what you type matches the start of the suggestion (case-insensitively), the rest stays as ghost text after it; Ctrl+→ (⌥→ on macOS) accepts one word at a time, Esc dismisses.
 - Typing something that doesn't match only hides the suggestion: delete back to its start (or clear the draft) and it shows again. Pressing Esc drops that turn's prediction for good, and a prediction call still running on the host is aborted.
 - Choose the prediction model (defaults to the current session's model) and flip the feature on/off — both live in the sidebar under **Plugins → Prompt Suggestions**.
+- **Custom models**: rather than set up a provider in dsh, switch **Model source** to **Custom**, click **+ Add** and pick a ModelScope, SiliconFlow, Agnes AI, DeepSeek or iFlytek Spark (Lite is free) preset (or any OpenAI-compatible URL) in the dialog, choose models and paste an API key; the provider then folds into one row you can expand to edit. Provider-specific fields such as turning thinking off are built in. The default source is **dsh models**; each side keeps its settings and neither falls back to the other. **Suggestion model** then lists the custom models to pick one, or **Automatic**, which tries them all top to bottom: a model that fails (quota used up, bad key, timeout…) hands over to the next and is skipped for 10 minutes (or until its settings change). If all of them fail, dsh's models are not used instead; the card shows the errors.
 - The same page has a **Token usage** panel: input / cached / output tokens spent by prediction and speed-test calls, per model (from the usage the provider reports; reset when dsh restarts).
 - Bilingual UI (zh / en), following **Settings → General → Language**; the sample conversation used for the speed test switches language along with it.
 - Predictions are only fired while browser UI is actually watching: headless runs and scheduled tasks spend no extra tokens, and nothing is predicted while a goal is about to continue on its own. Multiple tabs on the same session still trigger only one model call.
@@ -33,6 +34,22 @@ Change it in the UI, or put it in the profile's `cordis.patch.yml`:
 - id: next-prompt
   config:
     enabled: true          # master switch
+    source: dsh            # model source: dsh = provider / model below; own = ownProviders
+    ownProvider: ''        # with source own, which provider's model to use; empty = automatic, in order
+    ownModel: ''
+    ownProviders:          # custom providers, used when source is own
+      - id: modelscope
+        preset: modelscope # modelscope / siliconflow / agnes / deepseek / spark / custom
+        models: [Qwen/Qwen3.5-35B-A3B]
+      - id: custom-1
+        preset: custom
+        name: My API
+        baseURL: https://example.com/v1
+        models: [my-model]
+        extraBody: '{"enable_thinking": false}'  # extra fields merged into every request
+    apiKeys:               # keys by provider id; stored in plain text in this file, never sent to the browser
+      modelscope: ms-xxxx
+      custom-1: sk-xxxx
     provider: ''           # empty = follow the session model; set it to a provider id you configured in dsh (provider and model must be set together)
     model: ''              # model id for predictions; leave empty to follow the session too
     maxContextChars: 8000  # cap on the most recent conversation sent for prediction; lower is faster
@@ -43,7 +60,7 @@ Change it in the UI, or put it in the profile's `cordis.patch.yml`:
 
 ## Implementation notes
 
-- **Host** (`src/index.ts`): registers `POST /api/next-prompt/suggest` (streaming NDJSON), `POST /api/next-prompt/dismiss` (aborts the call when the user presses Esc), `POST /api/next-prompt/watch` (refreshes the "a browser is watching" mark when the user sends a message) and `GET /api/next-prompt/models`. Prediction starts as soon as the last reply of a turn (excluding tool calls) lands — no wait for `turn/end`, and no wait for the browser to ask — but only for sessions a browser has been watching within the last 30 minutes (the browser refreshes that mark at the start of every turn, so a message sent after a long idle still starts early). Reasoning effort prefers `off` / `minimal`, and the call is aborted as soon as the first line is complete.
+- **Host** (`src/index.ts`): registers `POST /api/next-prompt/suggest` (streaming NDJSON), `POST /api/next-prompt/dismiss` (aborts the call when the user presses Esc), `POST /api/next-prompt/watch` (refreshes the "a browser is watching" mark when the user sends a message) and `GET /api/next-prompt/models`. Prediction starts as soon as the last reply of a turn (excluding tool calls) lands — no wait for `turn/end`, and no wait for the browser to ask — but only for sessions a browser has been watching within the last 30 minutes (the browser refreshes that mark at the start of every turn, so a message sent after a long idle still starts early). Reasoning effort prefers `off` / `minimal`, and the call is aborted as soon as the first line is complete. Own models bypass dsh's `llm` service: the plugin calls `<baseURL>/chat/completions` itself (SSE, with `stream_options.include_usage`), and the presets carry each provider's fields for turning thinking off. Failed models cool down for 10 minutes in memory, and `POST /api/next-prompt/bench` returns them with their errors to the settings card.
 - **Browser** (`src/client.tsx`): mounts a component in the `conversation.input.overlay` slot that attaches to the host's prediction stream when a turn ends, so the ghost text appears word by word; it is rendered through a portal inside the editor's positioning container and reuses the original placeholder's classes, so its position and font match the placeholder exactly. Once you have typed the start of the suggestion, that part is drawn with `visibility: hidden` so the rest lines up right after your text. → / Tab / Ctrl+→ / Esc are intercepted with capture on a wrapper outside the input and only take effect while the ghost text is visible and the caret is at the end. The settings card hangs off `plugins.bundle.config` and reads/writes through `configForms`.
 - **i18n**: the zh / en UI dictionaries are registered into dsh's `locale` service (namespace `next-prompt`); a language-pack plugin can override or extend them. Without that service, translation falls back locally based on the browser language. The title and description in the plugin list come from `meta` in `locale/{en,zh}.json`; the host-side Config field descriptions are provided as en / zh strings via schemastery's `.i18n()`.
 
